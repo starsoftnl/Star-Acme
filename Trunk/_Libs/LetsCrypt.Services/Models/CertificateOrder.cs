@@ -7,4 +7,5 @@ internal class CertificateOrder
     public string? PfxPassword { get; set; }
     public KeyAlgorithms KeyAlgorithm { get; set; } = KeyAlgorithms.Rsa;
     public int KeySize { get; set; } = 2048;
+    public double RenewalFactor { get; set; } = 0.3;
 }

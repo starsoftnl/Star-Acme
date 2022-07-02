@@ -38,12 +38,24 @@ internal class CertificatePublisherBackgroundTask : WorkerBackgroundTask
                 var pfx = await CertificateService.LoadCertificateAsync(order.Id, cancellationToken);
                 var certificate = pfx == null ? null : new X509Certificate2(pfx, order.PfxPassword);
 
-                LoggerContext.Set("Order", order.Id);
-                LoggerContext.Set("Thumbprint", certificate?.Thumbprint);
+                var lifetime = 0.0;
+                var renewalDate = DateTimeOffset.UtcNow;
 
-                if (certificate != null && DateTimeOffset.Now > certificate.NotAfter - TimeSpan.FromDays(30))
+                LoggerContext.Set("Order", order.Id);
+
+                if (certificate != null)
                 {
-                    Logger.Information($"Existing certificate only has 30 days left. Removing it now");
+                    LoggerContext.Set("Thumbprint", certificate.Thumbprint);
+                    LoggerContext.Set("Start", certificate.NotBefore);
+                    LoggerContext.Set("Expiration", certificate.NotAfter);
+
+                    lifetime = (certificate.NotAfter - certificate.NotBefore).TotalDays;
+                    renewalDate = (DateTimeOffset)certificate.NotBefore.ToUniversalTime() + TimeSpan.FromDays( lifetime * order.RenewalFactor );
+                }
+
+                if ( certificate != null && DateTimeOffset.UtcNow > renewalDate)
+                {
+                    Logger.Information($"Existing certificates lifetime has exceeded {order.RenewalFactor*100}%. Removing it now");
                     CertificateService.DeleteOrder(order.Id);
                     CertificateService.DeleteCertificate(order.Id);
                     certificate = null;
@@ -51,8 +63,7 @@ internal class CertificatePublisherBackgroundTask : WorkerBackgroundTask
 
                 if (certificate != null)
                 {
-                    if (next == null || certificate.NotAfter - TimeSpan.FromDays(30) < next.Value)
-                        next = certificate.NotAfter - TimeSpan.FromDays(30);
+                    if (next == null || renewalDate < next.Value) next = renewalDate;
                     Logger.Information($"Existing certificate is still valid. Recheck at {next}");
                     continue;
                 }
@@ -76,9 +87,10 @@ internal class CertificatePublisherBackgroundTask : WorkerBackgroundTask
                     continue;
                 }
 
-                if (next == null || certificate.NotAfter - TimeSpan.FromDays(30) < next.Value)
-                    next = certificate.NotAfter - TimeSpan.FromDays(30);
+                lifetime = (certificate.NotAfter - certificate.NotBefore).TotalDays;
+                renewalDate = (DateTimeOffset)certificate.NotBefore.ToUniversalTime() + TimeSpan.FromDays(lifetime * order.RenewalFactor);
 
+                if (next == null || renewalDate < next.Value) next = renewalDate;
                 Logger.Information($"Got new certificate. Recheck at {next}");
             }
             catch ( Exception ex )
