@@ -1,17 +1,5 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net6.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="ACMESharpCore" Version="2.2.0.148" />
-    <PackageReference Include="Platform.Hosting.Console" Version="5.2.129" />
-  </ItemGroup>
-
   <PropertyGroup Label="Globals">
     <SccProjectName>SAK</SccProjectName>
     <SccProvider>SAK</SccProvider>
@@ -20,9 +8,30 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <Company>Starsoft</Company>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
-  
+
+  <PropertyGroup>
+    <Version Condition=" '$(VERSION)' == '' ">100.100.100-local</Version>
+    <Version Condition=" '$(VERSION)' != '' ">$(VERSION)</Version>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Company>Starsoft Software Development</Company>
+    <Product>Lets Crypt Certificate Deployment</Product>
+    <Title>Lets Crypt Certificate Deployment</Title>
+    <Description>A server for deploying Lets Crypt certificates</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ACMESharpCore" Version="2.2.0.148" />
+    <PackageReference Include="Platform.Hosting.Console" Version="5.2.129" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\_Libs\LetsCrypt.Services\LetsCrypt.Services.csproj" />
   </ItemGroup>
