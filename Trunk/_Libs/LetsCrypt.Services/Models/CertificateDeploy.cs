@@ -12,6 +12,10 @@ internal class CertificateDeploy
 
     public string LocalPath { get; set; } = "c:\\admin\\Certificate";
 
+    public string[] IncludeTargets { get; set; } = new string[0];
+
+    public string[] ExcludeTargets { get; set; } = new string[0];
+
     public CertificateTarget[] Targets { get; set; }
         = Array.Empty<CertificateTarget>();
 }

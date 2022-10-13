@@ -6,10 +6,11 @@ namespace LetsCrypt.Services.Services;
 internal class DeploymentServiceUnifi : DeploymentServiceBase
 {
     public DeploymentServiceUnifi(
-        ILogger<DeploymentServiceUnifi> logger, 
+        ILogger<DeploymentServiceUnifi> logger,
+        ILetsCryptMailService mailService,
         IOptionsMonitor<DeployOptions> deployOptions,
         CertificateService certificateService)
-        : base(logger, deployOptions, certificateService)
+        : base(logger, mailService, deployOptions, certificateService)
     {
     }
 

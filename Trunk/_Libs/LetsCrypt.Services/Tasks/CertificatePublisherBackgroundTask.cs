@@ -1,9 +1,4 @@
-﻿using System.Net;
-using System.Security.Cryptography.X509Certificates;
-using System.Management.Automation;
-using System.Management.Automation.Runspaces;
-
-namespace LetsCrypt.Services.Tasks;
+﻿namespace LetsCrypt.Services.Tasks;
 
 // https://lachlanbarclay.net/2022/01/updating-iis-certificates-with-powershell
 // https://www.alitajran.com/install-exchange-certificate-with-powershell/
@@ -16,8 +11,10 @@ internal class CertificatePublisherBackgroundTask : WorkerBackgroundTask
     private readonly CertificateService CertificateService;
     private readonly DeploymentService DeploymentService;
     private readonly IOptionsMonitor<CertificateOptions> CertificateOptions;
+    private readonly IEMailService MailService;
 
     public CertificatePublisherBackgroundTask(
+        IEMailService mailService,
         CertificateService certificateService,
         DeploymentService deploymentService,
         IOptionsMonitor<CertificateOptions> certificateOptions)
@@ -25,6 +22,9 @@ internal class CertificatePublisherBackgroundTask : WorkerBackgroundTask
         CertificateService = certificateService;
         DeploymentService = deploymentService;
         CertificateOptions = certificateOptions;
+        MailService = mailService;
+
+        certificateOptions.OnChange((o, n) =>Run());
     }
 
     protected override async Task<TimeSpan?> RunTaskAsync(DateTimeOffset now, CancellationToken cancellationToken)
@@ -46,8 +46,8 @@ internal class CertificatePublisherBackgroundTask : WorkerBackgroundTask
                 if (certificate != null)
                 {
                     LoggerContext.Set("Thumbprint", certificate.Thumbprint);
-                    LoggerContext.Set("Start", certificate.NotBefore);
-                    LoggerContext.Set("Expiration", certificate.NotAfter);
+                    LoggerContext.Set("Start", certificate.NotBefore.ToString("dd-MM-yyy HH:mm::ss") + " UTC");
+                    LoggerContext.Set("Expiration", certificate.NotAfter.ToString("dd-MM-yyy HH:mm::ss") + " UTC");
 
                     lifetime = (certificate.NotAfter - certificate.NotBefore).TotalDays;
                     renewalDate = (DateTimeOffset)certificate.NotBefore.ToUniversalTime() + TimeSpan.FromDays( lifetime * order.RenewalFactor );
@@ -95,7 +95,11 @@ internal class CertificatePublisherBackgroundTask : WorkerBackgroundTask
             }
             catch ( Exception ex )
             {
-                Logger.Error(ex, "Certificate Update Failed");
+                var message = $"Certificate update failed for order {order.Id}";
+
+                Logger.Error(ex, message);
+
+                await SendEmailNotificationAsync(ex, message, cancellationToken);
 
                 if (next == null || next > now + TimeSpan.FromDays(1))
                     next = now + TimeSpan.FromDays(1);
@@ -103,5 +107,18 @@ internal class CertificatePublisherBackgroundTask : WorkerBackgroundTask
         }
 
         return await DeploymentService.DeployCertificatesAsync( now, next, cancellationToken ) - DateTimeOffset.Now;
+    }
+
+    private async Task SendEmailNotificationAsync(Exception error, string message, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var text = message + "\r\n\r\n" + error.ToText();
+            await MailService.SendAsync("Lets Encrypt Certificate Update Failed", text, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning(ex, "EMail notification failed");
+        }
     }
 }

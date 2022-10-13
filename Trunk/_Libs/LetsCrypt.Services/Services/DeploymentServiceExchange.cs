@@ -6,10 +6,11 @@ namespace LetsCrypt.Services.Services;
 internal class DeploymentServiceExchange : DeploymentServiceBase
 {
     public DeploymentServiceExchange(
-        ILogger<DeploymentServiceHttpSys> logger, 
+        ILogger<DeploymentServiceHttpSys> logger,
+        ILetsCryptMailService mailService,
         IOptionsMonitor<DeployOptions> deployOptions,
         CertificateService certificateService)
-        : base(logger, deployOptions, certificateService)
+        : base(logger, mailService, deployOptions, certificateService)
     {
     }
 

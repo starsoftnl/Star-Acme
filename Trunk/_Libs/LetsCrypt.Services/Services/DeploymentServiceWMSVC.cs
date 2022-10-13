@@ -6,10 +6,11 @@ namespace LetsCrypt.Services.Services;
 internal class DeploymentServiceWMSVC : DeploymentServiceBase
 {
     public DeploymentServiceWMSVC(
-        ILogger<DeploymentServiceWMSVC> logger, 
+        ILogger<DeploymentServiceWMSVC> logger,
+        ILetsCryptMailService mailService,
         IOptionsMonitor<DeployOptions> deployOptions,
         CertificateService certificateService)
-        : base(logger, deployOptions, certificateService)
+        : base(logger, mailService, deployOptions, certificateService)
     {
     }
 

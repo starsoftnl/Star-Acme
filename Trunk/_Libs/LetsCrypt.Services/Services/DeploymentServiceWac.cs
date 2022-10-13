@@ -6,10 +6,11 @@ namespace LetsCrypt.Services.Services;
 internal class DeploymentServiceWac : DeploymentServiceBase
 {
     public DeploymentServiceWac(
-        ILogger<DeploymentServiceWac> logger, 
+        ILogger<DeploymentServiceWac> logger,
+        ILetsCryptMailService mailService,
         IOptionsMonitor<DeployOptions> deployOptions,
         CertificateService certificateService)
-        : base(logger, deployOptions, certificateService)
+        : base(logger, mailService, deployOptions, certificateService)
     {
     }
 

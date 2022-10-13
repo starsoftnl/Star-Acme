@@ -2,10 +2,8 @@
 using ACMESharp.Protocol;
 using ACMESharp.Protocol.Resources;
 using DnsClient;
-using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using PKISharp.SimplePKI;
-using Platform.Logging;
 using System.Security.Cryptography.X509Certificates;
 
 namespace LetsCrypt.Services.Services;
@@ -23,22 +21,20 @@ internal class CertificateService
     private readonly IOptionsMonitor<AcmeOptions> AcmeOptions;
     private readonly IOptionsMonitor<PlatformOptions> PlatformOptions;
     private readonly IOptionsMonitor<NederhostOptions> NederhostOptions;
-    private readonly NederhostClient NederhostClient;
+    private readonly IDnsHostingService DnsHostingService;
 
     public CertificateService(
         ILogger<CertificateService> logger,
         IHttpClientFactory httpFactory, 
         IOptionsMonitor<AcmeOptions> acmeOptions, 
         IOptionsMonitor<PlatformOptions> platformOptions,
-        IOptionsMonitor<NederhostOptions> nederhostOptions,
-        NederhostClient nederhostClient)
+        IDnsHostingService dnsHostingService)
     {
         Logger = logger;
         HttpFactory = httpFactory;
         AcmeOptions = acmeOptions;
         PlatformOptions = platformOptions;
-        NederhostClient = nederhostClient;
-        NederhostOptions = nederhostOptions;
+        DnsHostingService = dnsHostingService;
     }
 
     public async Task<bool> UpdateOrCreateCertificate(CertificateOrder order, CancellationToken cancellationToken)
@@ -55,6 +51,7 @@ internal class CertificateService
             details = await acme.CreateOrderAsync(order.DnsNames, null, null, cancellationToken);
             await SaveOrderDetailsAsync(order.Id, details, cancellationToken);
             LoggerContext.Set("OrderDetails", details.OrderUrl);
+            LoggerContext.Set("OrderExpires", details.Payload.Expires);
             Logger.Information("Created new order details");
         }
         else
@@ -63,6 +60,7 @@ internal class CertificateService
             details = await acme.GetOrderDetailsAsync(details.OrderUrl, existing: details, cancellationToken);
             await SaveOrderDetailsAsync(order.Id, details, cancellationToken);
             LoggerContext.Set("OrderDetails", details.OrderUrl);
+            LoggerContext.Set("OrderExpires", details.Payload.Expires);
             Logger.Information("Loaded existing order details");
         }
 
@@ -89,19 +87,29 @@ internal class CertificateService
 
                 var values = new[] { new DnsValue { content = dns.DnsRecordValue } };
 
-                await NederhostClient.SetRecordAsync(NederhostOptions.CurrentValue.Zone, dns.DnsRecordName, dns.DnsRecordType, values, cancellationToken);
+                await DnsHostingService.SetRecordAsync(
+                    order.DnsHostingProvider, 
+                    order.DnsHostingZone, 
+                    dns.DnsRecordName, 
+                    dns.DnsRecordType, 
+                    values, 
+                    cancellationToken);
 
-                var options = new LookupClientOptions();
-                options.UseCache = false;
-
-                var lookup = new LookupClient();
-                await WaitForAsync(async () =>
+                if (order.DnsUpdateValidation )
                 {
-                    var answer = await lookup.QueryAsync(dns.DnsRecordName, QueryType.TXT);
-                    return answer.Answers.TxtRecords().Any(t => t.EscapedText.Any(e => e == dns.DnsRecordValue));
-                }, cancellationToken);
+                    var options = new LookupClientOptions();
+                    options.UseCache = false;
 
-                await Task.Delay(TimeSpan.FromSeconds(60), cancellationToken);
+                    var lookup = new LookupClient();
+                    await WaitForAsync(async () =>
+                    {
+                        var answer = await lookup.QueryAsync(dns.DnsRecordName, QueryType.TXT);
+                        return answer.Answers.TxtRecords().Any(t => t.EscapedText.Any(e => e == dns.DnsRecordValue));
+                    }, cancellationToken);
+
+                }
+                
+                await Task.Delay(order.DnsUpdateDelay, cancellationToken);
 
                 await acme.GetNonceAsync();
                 challenge = await acme.AnswerChallengeAsync(challenge.Url, cancellationToken);
@@ -113,7 +121,12 @@ internal class CertificateService
                     return challenge.Status == ValidStatus;
                 }, cancellationToken);
 
-                await NederhostClient.DeleteRecordAsync(NederhostOptions.CurrentValue.Zone, dns.DnsRecordName, dns.DnsRecordType, cancellationToken);
+                await DnsHostingService.DeleteRecordAsync(
+                    order.DnsHostingProvider,
+                    order.DnsHostingZone,
+                    dns.DnsRecordName, 
+                    dns.DnsRecordType, 
+                    cancellationToken);
             }
 
             await WaitForAsync(async () =>
@@ -162,6 +175,8 @@ internal class CertificateService
             await SaveCertificateAsync(order.Id, pfx, cancellationToken);
 
             LoggerContext.Set("Thumbprint", cert.Thumbprint);
+            LoggerContext.Set("Start", cert.NotBefore.ToString("dd-MM-yyy HH:mm::ss") + " UTC");
+            LoggerContext.Set("Expires", cert.NotAfter.ToString("dd-MM-yyy HH:mm::ss") + " UTC");
             Logger.Information($"Certificate stored");
         }
 

@@ -2,6 +2,10 @@
 using System.Management.Automation;
 using System.Management.Automation.Runspaces;
 using System.Security.Cryptography.X509Certificates;
+using System.Security.AccessControl;
+using System.Security.Cryptography;
+using System.Runtime.ConstrainedExecution;
+using System.IO;
 
 namespace LetsCrypt.Services.Services;
 
@@ -9,15 +13,18 @@ namespace LetsCrypt.Services.Services;
 internal abstract class DeploymentServiceBase : IDeploymentService
 {
     protected readonly ILogger Logger;
+    protected readonly ILetsCryptMailService MailService;
     protected readonly IOptionsMonitor<DeployOptions> DeployOptions;
     protected readonly CertificateService CertificateService;
 
     public DeploymentServiceBase( 
-        ILogger logger, 
+        ILogger logger,
+        ILetsCryptMailService mailService,
         IOptionsMonitor<DeployOptions> deployOptions,
         CertificateService certificateService)
     {
         Logger = logger;
+        MailService = mailService;
         DeployOptions = deployOptions;
         CertificateService = certificateService;
     }
@@ -36,8 +43,16 @@ internal abstract class DeploymentServiceBase : IDeploymentService
             foreach( var target in deploy.Targets )
             {
                 var certificate = target.Certificate ?? deploy.Certificate;
-                if (!certificate.IsLike(OrderId)) continue;
 
+                if (!certificate.IsLike(OrderId)) 
+                    continue;
+
+                if (deploy.ExcludeTargets.Any(t => target.ComputerName.PatternMatch(t, true)))
+                    continue;
+
+                if (deploy.IncludeTargets.Length > 0 && !deploy.IncludeTargets.Any(t => target.ComputerName.PatternMatch(t, true)))
+                    continue;
+                
                 Target = target;
                 ComputerName = target.ComputerName;                
                 Username = target.Username ?? deploy.Username;
@@ -47,7 +62,38 @@ internal abstract class DeploymentServiceBase : IDeploymentService
 
                 LoggerContext.Set("ComputerName", ComputerName);
 
-                await DeployCertificateAsync(cancellationToken);
+                IDisposable[] authentications = null!;
+
+                try
+                {
+                    authentications = target.Authentications.Select(a => Connect(a)).ToArray();
+
+                    await DeployCertificateAsync(cancellationToken);
+                }
+                catch( Exception ex )
+                {
+                    var message = $"Deployment of certificate {certificate} failed for target {target.ComputerName}";
+
+                    Logger.Error(ex, message);
+
+                    await MailService.SendEmailNotificationAsync(ex, message, cancellationToken);
+                }
+                finally
+                {
+                    if(authentications != null )
+                        foreach (var authentication in authentications)
+                        {
+                            try
+                            {
+                                authentication.Dispose();
+                            }
+                            catch( Exception ex )
+                            {
+                                Logger.Warning(ex, "Failed to dispose network connection");
+                            }
+                        }
+                        
+                }
             }
         }
     }
@@ -74,6 +120,12 @@ internal abstract class DeploymentServiceBase : IDeploymentService
     protected string GetNetworkCertificatePath()
         => Path.Join(UncPath, $"{OrderId}.pfx");
 
+    private NetworkConnection Connect( CertificateTargetAuthentication authentication )
+    {
+        var credentials = new NetworkCredential(authentication.Username, authentication.Password, authentication.Domain);
+        return new NetworkConnection(authentication.NetworkShare, credentials);
+    }
+
     protected async Task<byte[]?> CopyCertificateAsync(CancellationToken cancellationToken)
     {
         var pfx = await CertificateService.LoadCertificateAsync(OrderId, cancellationToken);
@@ -88,6 +140,63 @@ internal abstract class DeploymentServiceBase : IDeploymentService
         await File.WriteAllBytesAsync(filePathUnc, pfx, cancellationToken);
 
         return pfx;
+    }
+
+    protected async Task SetRegistryKeyAsync( string path, string name, string value )
+    {
+        await RemoteAsync(async remote =>
+        {
+            string[] result;
+            result = await remote.ExecuteAsync(shell => shell
+                .AddScript($"$path = 'Registry::{path}'"));
+
+            result = await remote.ExecuteAsync(shell => shell
+                .AddScript($"$name = '{name}'"));
+
+            result = await remote.ExecuteAsync(shell => shell
+                .AddScript($"$value = '{value}'"));
+
+            result = await remote.ExecuteAsync(shell => shell
+                .AddScript($"If( -not (Test-Path $path) ) {{ New-Item -Path $path -Force | Out-Null }}"));
+
+            result = await remote.ExecuteAsync(shell => shell
+                .AddScript($"New-ItemProperty -Path $path -Name $name -Value $value -Force"));
+        });
+    }
+
+    protected async Task AddAccessRightsToCertificateAsync( string storeName, string thumbprint, string username, CancellationToken cancellationToken )
+    {       
+        await RemoteAsync(async remote =>
+        {
+            string[] result;
+            result = await remote.ExecuteAsync(shell => shell
+                .AddCommand("Set-ExecutionPolicy")
+                .AddArgument("Unrestricted"));
+
+            result = await remote.ExecuteAsync(shell => shell
+                .AddScript(
+                    $"$certs = Get-ChildItem 'Cert:\\LocalMachine\\{storeName}' | " +
+                    $"Where-Object {{ $_.Thumbprint -eq '{thumbprint}' }} | " +
+                    $"Select-Object -first 1"));
+
+            result = await remote.ExecuteAsync(shell => shell
+                .AddScript($"$key = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($certs[0])"));
+
+            result = await remote.ExecuteAsync(shell => shell
+                .AddScript($"$rule = New-Object System.Security.AccessControl.FileSystemAccessRule '{username}', Read, Allow"));
+
+            result = await remote.ExecuteAsync(shell => shell
+                .AddScript($"$filepath = [io.path]::combine($env:ALLUSERSPROFILE, 'Microsoft\\Crypto\\Keys', $key.key.UniqueName)"));
+
+            result = await remote.ExecuteAsync(shell => shell
+                .AddScript($"$acl = Get-Acl -path $filepath"));
+
+            result = await remote.ExecuteAsync(shell => shell
+                .AddScript($"$acl.AddAccessRule($rule)"));
+
+            result = await remote.ExecuteAsync(shell => shell
+                .AddScript($"Set-Acl $filepath $acl"));
+        });
     }
 
     protected async Task ChangePasswordCertificateAsync(string password, CancellationToken cancellationToken)
@@ -225,5 +334,21 @@ internal abstract class DeploymentServiceBase : IDeploymentService
             store.Add(certificate);
 
         store.Close();
+    }
+
+    protected async Task RestartServiceAsync(string displayName, CancellationToken cancellationToken)
+    {
+        await RemoteAsync(async remote =>
+        {
+            string[] result;
+            result = await remote.ExecuteAsync(shell => shell
+                .AddCommand("Set-ExecutionPolicy")
+                .AddArgument("Unrestricted"));
+
+            result = await remote.ExecuteAsync(shell => shell
+                .AddCommand("Restart-Service")
+                .AddParameter("Force")
+                .AddParameter("DisplayName", displayName));
+        });
     }
 }

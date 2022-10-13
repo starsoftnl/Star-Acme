@@ -5,10 +5,11 @@ namespace LetsCrypt.Services.Services;
 internal class DeploymentServiceIIS : DeploymentServiceBase
 {
     public DeploymentServiceIIS(
-        ILogger<DeploymentServiceIIS> logger, 
+        ILogger<DeploymentServiceIIS> logger,
+        ILetsCryptMailService mailService,
         IOptionsMonitor<DeployOptions> deployOptions,
         CertificateService certificateService)
-        : base(logger, deployOptions, certificateService)
+        : base(logger, mailService, deployOptions, certificateService)
     {
     }
 
@@ -18,6 +19,11 @@ internal class DeploymentServiceIIS : DeploymentServiceBase
             if( iis?.Enabled == true )
                 await DeployCertificateAsync(iis, cancellationToken);
     }
+
+    // Requires
+    // [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    // Install-Module –Name IISAdministration -RequiredVersion 1.1.0.0
+    // Install-Module –Name IISAdministration -Force
 
     private async Task DeployCertificateAsync(CertificateTargetIIS iis, CancellationToken cancellationToken)
     {
@@ -64,11 +70,15 @@ internal class DeploymentServiceIIS : DeploymentServiceBase
                         .AddParameter("BindingInformation", binding.Trim('?'))
                         .AddParameter("CertStoreLocation", $"Cert:\\LocalMachine\\{iis.StoreName}")
                         .AddParameter("CertificateThumbPrint", certificate.Thumbprint)
+                        .AddParameter("Force")
                         .AddParameter("Protocol", "https");
 
                     if (binding.Split(":").Length == 3 && !string.IsNullOrEmpty(binding.Split(":")[2]) && !binding.EndsWith("?"))
                         shell.AddParameter("SslFlag", "Sni");
                 });
+
+                if( iis.RestartService )
+                    await RestartServiceAsync("World Wide Web Publishing Service", cancellationToken);
             }
 
             // shell.AddScript($"Get-ChildItem -path IIS:\\SSLbindings | Where-Object {{ ($_.Port -eq {iis.Port}) -and ($_.Host -eq \"{iis.Hostname}\") -and ($_.IPAddress -match \"{iis.IpAddress}\") }} | Remove-Item");

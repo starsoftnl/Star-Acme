@@ -14,6 +14,9 @@ internal class CertificateTarget
 
     public string? LocalPath { get; set; }
 
+    public CertificateTargetAuthentication[] Authentications { get; set; }
+       = Array.Empty<CertificateTargetAuthentication>();
+
     public CertificateTargetIIS[] IIS { get; set; }
         = Array.Empty<CertificateTargetIIS>();
 
@@ -28,5 +31,15 @@ internal class CertificateTarget
 
     public CertificateTargetUnifi? Unifi { get; set; }
 
+    public CertificateTargetHomeAssistant? HomeAssistant { get; set; }
+
     public CertificateTargetWMSVC? WMSVC { get; set; }
+
+    public CertificateTargetRdp? Rdp { get; set; }
+
+    public CertificateTargetSqlServer? SqlServer { get; set; }
+
+    public CertificateTargetWindowsService[] WindowsServices { get; set; }
+        = Array.Empty<CertificateTargetWindowsService>();
+
 }

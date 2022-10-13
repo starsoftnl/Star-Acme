@@ -6,6 +6,4 @@ internal class NederhostOptions
     public string Url { get; set; } = "https://api.nederhost.nl/dns/v1";
 
     public string ApiKey { get; set; } = "";
-
-    public string Zone { get; set; } = "starsoft.nl";
 }

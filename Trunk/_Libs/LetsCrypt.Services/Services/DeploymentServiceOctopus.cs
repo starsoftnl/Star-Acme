@@ -6,10 +6,11 @@ namespace LetsCrypt.Services.Services;
 internal class DeploymentServiceOctopus : DeploymentServiceBase
 {
     public DeploymentServiceOctopus(
-        ILogger<DeploymentServiceOctopus> logger, 
+        ILogger<DeploymentServiceOctopus> logger,
+        ILetsCryptMailService mailService,
         IOptionsMonitor<DeployOptions> deployOptions,
         CertificateService certificateService)
-        : base(logger, deployOptions, certificateService)
+        : base(logger, mailService, deployOptions, certificateService)
     {
     }
 

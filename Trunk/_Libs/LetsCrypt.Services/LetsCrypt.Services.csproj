@@ -15,13 +15,18 @@
 
   <ItemGroup>
     <PackageReference Include="ACMESharpCore" Version="2.2.0.148" />
-    <PackageReference Include="DnsClient" Version="1.6.0" />
+    <PackageReference Include="DnsClient" Version="1.6.1" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="6.0.0" />
     <PackageReference Include="PKISharp.SimplePKI" Version="2.0.1.148" />
-    <PackageReference Include="Platform.DependencyInjection" Version="5.2.129" />
-    <PackageReference Include="Platform.Hosting" Version="5.2.129" />
-    <PackageReference Include="System.Management.Automation" Version="7.2.2" />
+    <PackageReference Include="Platform.DependencyInjection" Version="5.2.170" />
+    <PackageReference Include="Platform.Hosting" Version="5.2.170" />
+    <PackageReference Include="Platform.Mail" Version="5.2.170" />
+    <PackageReference Include="System.Management.Automation" Version="7.2.6" />
     <PackageReference Include="System.Net.Http.Json" Version="6.0.0" />
+    <PackageReference Include="System.Security.AccessControl" Version="6.0.0" />
+    <PackageReference Include="System.Security.Cryptography.Algorithms" Version="4.3.1" />
+    <PackageReference Include="System.Security.Cryptography.Cng" Version="5.0.0" />
+    <PackageReference Include="System.Security.Cryptography.X509Certificates" Version="4.3.2" />
   </ItemGroup>
 
 </Project>

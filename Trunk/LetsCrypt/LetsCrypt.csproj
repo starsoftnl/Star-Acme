@@ -25,11 +25,12 @@
     <Product>Lets Crypt Certificate Deployment</Product>
     <Title>Lets Crypt Certificate Deployment</Title>
     <Description>A server for deploying Lets Crypt certificates</Description>
+    <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="ACMESharpCore" Version="2.2.0.148" />
-    <PackageReference Include="Platform.Hosting.Console" Version="5.2.129" />
+    <PackageReference Include="Platform.Hosting.Console" Version="5.2.170" />
   </ItemGroup>
 
   <ItemGroup>
@@ -37,6 +38,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="app.ico" />
     <Content Include="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
