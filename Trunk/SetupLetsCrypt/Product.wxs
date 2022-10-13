@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+     xmlns:util="http://schemas.microsoft.com/wix/UtilExtension"
+     xmlns:fire="http://schemas.microsoft.com/wix/FirewallExtension">
+
+	<?ifdef env.BUILDVERSION ?>
+	<?define Version = "$(env.BUILDVERSION)" ?>
+	<?else?>
+	<?define Version = "100.100.100.1" ?>
+	<?endif?>
+
+	<?define ProductVersion = "$(var.Version)" ?>
+	<?define Manufacturer = "Starsoft Software Development" ?>
+	<?define Product = "Lets Crypt" ?>
+	<?define ProductName = "Starsoft Lets Crypt v$(var.Version)" ?>
+	<?define UpgradeCode = "4B0CE75E-C1F9-4DA4-AAFF-951A296327D6" ?>
+	<?define ExeName = "$(var.LetsCrypt.ProjectName)" ?>
+	<?define ExeDir = "$(var.LetsCrypt.ProjectDir)" ?>
+
+	<?define Win64 = "yes" ?>
+	<?define PlatformProgramFilesFolder = "ProgramFiles64Folder" ?>
+
+	<?define SourceFolder = "$(var.SourceDir)\" ?>
+
+	<Product Id="*" Name="$(var.ProductName)" UpgradeCode="$(var.UpgradeCode)"
+	  Language="1033" Version="$(var.ProductVersion)" Manufacturer="$(var.Manufacturer)">
+
+		<Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" Platforms="x64" />
+
+		<Upgrade Id="$(var.UpgradeCode)">
+			<UpgradeVersion Property="PREVIOUSFOUND" Minimum="0.0.0.0" IncludeMinimum="yes" /> <!-- Maximum="$(var.ProductVersion)" IncludeMaximum="yes" -->
+		</Upgrade>
+
+		<MediaTemplate EmbedCab="yes" />
+
+		<Feature Id="Complete" Title="$(var.ProductName)" Level="1" Description="Complete" Display="expand" ConfigurableDirectory="INSTALLDIR">
+			<ComponentGroupRef Id="FolderStructure" />
+			<ComponentGroupRef Id="ProductExecutable" />
+			<ComponentGroupRef Id="Assemblies" />
+		</Feature>
+
+		<InstallExecuteSequence>
+			<RemoveExistingProducts After="InstallInitialize"/>
+		</InstallExecuteSequence>
+
+		<WixVariable Id="WixUILicenseRtf" Value="eula.rtf" />
+
+		<UIRef Id="WixUI_Mondo" />
+		<UIRef Id="WixUI_ErrorProgressText" />
+
+	</Product>
+
+	<Fragment>
+		<Icon Id="app.ico" SourceFile="$(var.ExeDir)\app.ico" />
+	</Fragment>
+
+	<Fragment>
+		<Directory Id="TARGETDIR" Name="SourceDir">
+			<!-- program files -->
+			<Directory Id="$(var.PlatformProgramFilesFolder)">
+				<Directory Id="ProgramFilesCompany" Name="$(var.Manufacturer)">
+					<Directory Id="INSTALLDIR" Name="$(var.Product)"/>
+				</Directory>
+			</Directory>
+			<!-- start menu -->
+			<Directory Id="ProgramMenuFolder">
+				<Directory Id="ProgramMenuCompany" Name="$(var.Manufacturer)">
+					<Directory Id="ProgramMenuProduct" Name="$(var.Product)"/>
+				</Directory>
+			</Directory>
+			<!-- desktop folder -->
+			<Directory Id="DesktopFolder" Name="Desktop" />
+		</Directory>
+	</Fragment>
+
+	<Fragment>
+		<ComponentGroup Id="FolderStructure">
+
+			<!-- remove start menu folder on uninstall-->
+			<Component Id="ProgramMenuCompany" Directory="ProgramMenuCompany" Win64="$(var.Win64)">
+				<RemoveFolder Id="ProgramMenuCompany" On="uninstall"/>
+				<RegistryValue Root="HKCU" Key="Software\$(var.Manufacturer)" Name="Installer" Type="string" Value="1" KeyPath="yes"/>
+			</Component>
+
+			<!-- remove start menu folder on uninstall-->
+			<Component Id="ProgramMenuProduct" Directory="ProgramMenuProduct" Win64="$(var.Win64)">
+				<RemoveFolder Id="ProgramMenuProduct" On="uninstall"/>
+				<RegistryValue Root="HKCU" Key="Software\$(var.Manufacturer)\$(var.Product)" Name="Installer" Type="string" Value="1" KeyPath="yes"/>
+			</Component>
+
+		</ComponentGroup>
+	</Fragment>
+
+	<Fragment>
+
+		<ComponentGroup Id="ProductExecutable" Directory="INSTALLDIR">
+
+			<Component Id="ProductJson" Guid="*" Win64="$(var.Win64)">
+				<File Source="$(var.SourceFolder)appsettings.json"
+					  Name="appsettings.json"
+					  KeyPath="yes"/>
+			</Component>
+
+			<Component Id="ProductDefaultJson" Guid="*" Win64="$(var.Win64)">
+				<File Source="$(var.SourceFolder)appsettings.default.json"
+					  Name="appsettings.default.json"
+					  KeyPath="yes"/>
+			</Component>
+
+			<Component Id="DependencyJson" Guid="*" Win64="$(var.Win64)">
+				<File Source="$(var.SourceDir)\$(var.ExeName).deps.json"
+					  Name="$(var.ExeName).deps.json"
+					  KeyPath="yes"/>
+			</Component>
+
+			<Component Id="RuntimeConfigJson" Guid="*" Win64="$(var.Win64)">
+				<File Source="$(var.SourceDir)\$(var.ExeName).runtimeconfig.json"
+					  Name="$(var.ExeName).runtimeconfig.json"
+					  KeyPath="yes"/>
+			</Component>
+
+			<Component Id="CreateDumpExe" Guid="*" Win64="$(var.Win64)">
+				<File Source="$(var.SourceDir)\createdump.exe"
+					  Name="createdump.exe"
+					  KeyPath="yes"/>
+			</Component>
+
+			<Component Id="ProductComponent" Guid="*" Win64="$(var.Win64)">
+
+				<!-- main executable -->
+				<File Id="MainApplication" Source="$(var.SourceFolder)$(var.ExeName).exe" KeyPath="yes">
+
+					<!-- run menu shortcut -->
+					<Shortcut Id="StartMenuProduct" Directory="ProgramMenuProduct" Name="$(var.Product)" Icon="app.ico"
+						WorkingDirectory='INSTALLDIR' Advertise="yes" />
+
+					<!-- start menu shortcut -->
+					<Shortcut Id="StartMenuProductStart" Directory="ProgramMenuProduct" Name="Start Service $(var.Product)" Arguments ="-start -elevate"
+						WorkingDirectory='INSTALLDIR' Advertise="yes" />
+
+					<!-- stop menu shortcut -->
+					<Shortcut Id="StartMenuProductStop" Directory="ProgramMenuProduct" Name="Stop Service $(var.Product)" Arguments ="-stop -elevate"
+						WorkingDirectory='INSTALLDIR' Advertise="yes" />
+
+					<!-- add firewall exception -->
+					<fire:FirewallException Id="FirewallException" Name="$(var.ProductName)" Description="$(var.ProductName)" Scope="any"/>
+
+				</File>
+
+				<RemoveFolder Id="RemoveProgramMenuProduct" Directory="ProgramMenuProduct" On="uninstall"/>
+				<RemoveFolder Id="RemoveINSTALLDIR" Directory="INSTALLDIR" On="uninstall"/>
+
+				<!-- install as service -->
+				<ServiceInstall
+					  Id="ServiceInstallerProduct"
+					  Type="ownProcess"
+					  Name="$(var.ExeName)"
+					  DisplayName="$(var.Product)"
+					  Description="$(var.ProductName)"
+					  Start="auto"
+					  Account="LocalSystem"
+					  ErrorControl="normal">
+
+					<util:ServiceConfig
+						FirstFailureActionType="restart"
+						SecondFailureActionType="restart"
+						ThirdFailureActionType="restart"
+						ResetPeriodInDays="1"
+						RestartServiceDelayInSeconds="20" />
+
+					<ServiceConfig FailureActionsWhen="1" OnInstall="yes" OnReinstall="yes"/>
+
+				</ServiceInstall>
+
+				<!-- start service -->
+				<ServiceControl Id="StartServiceProduct" Stop="both" Remove="uninstall" Name="$(var.ExeName)" Wait="no" />
+
+			</Component>
+
+		</ComponentGroup>
+
+	</Fragment>
+
+</Wix>
