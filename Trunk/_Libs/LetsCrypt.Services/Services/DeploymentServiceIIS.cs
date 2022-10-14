@@ -7,16 +7,19 @@ internal class DeploymentServiceIIS : DeploymentServiceBase
     public DeploymentServiceIIS(
         ILogger<DeploymentServiceIIS> logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<DeployOptions> deployOptions,
+        IOptionsMonitor<CertificateOptions> certificateOptions,
         CertificateService certificateService)
-        : base(logger, mailService, deployOptions, certificateService)
+        : base(logger, mailService, certificateOptions, certificateService)
     {
     }
+
+    protected override int? GetPhaseCount()
+        => Target.IIS?.Max(h => h.Phase);
 
     protected override async Task DeployCertificateAsync(CancellationToken cancellationToken)
     {
         foreach (var iis in Target.IIS)
-            if( iis?.Enabled == true )
+            if( iis?.Enabled == true && iis.Phase == Phase )
                 await DeployCertificateAsync(iis, cancellationToken);
     }
 

@@ -7,16 +7,19 @@ internal class DeploymentServiceSqlServer : DeploymentServiceBase
     public DeploymentServiceSqlServer(
         ILogger<DeploymentServiceSqlServer> logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<DeployOptions> deployOptions,
+        IOptionsMonitor<CertificateOptions> certificateOptions,
         CertificateService certificateService)
-        : base(logger, mailService, deployOptions, certificateService)
+        : base(logger, mailService, certificateOptions, certificateService)
     {
     }
+
+    protected override int? GetPhaseCount()
+        => Target.SqlServer?.Phase;
 
     protected override async Task DeployCertificateAsync(CancellationToken cancellationToken)
     {
         var sql = Target.SqlServer;
-        if(sql?.Enabled == true )
+        if(sql?.Enabled == true && sql.Phase == Phase)
             await DeployCertificateAsync(sql, cancellationToken);
     }
 

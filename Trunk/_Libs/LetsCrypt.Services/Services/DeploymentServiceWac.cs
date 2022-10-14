@@ -8,15 +8,18 @@ internal class DeploymentServiceWac : DeploymentServiceBase
     public DeploymentServiceWac(
         ILogger<DeploymentServiceWac> logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<DeployOptions> deployOptions,
+        IOptionsMonitor<CertificateOptions> certificateOptions,
         CertificateService certificateService)
-        : base(logger, mailService, deployOptions, certificateService)
+        : base(logger, mailService, certificateOptions, certificateService)
     {
     }
 
+    protected override int? GetPhaseCount()
+        => Target.Wac?.Phase;
+
     protected override async Task DeployCertificateAsync(CancellationToken cancellationToken)
     {
-        if (Target.Wac?.Enabled == true)
+        if (Target.Wac?.Enabled == true && Target.Wac.Phase == Phase)
             await DeployCertificateAsync(Target.Wac, cancellationToken);
     }
 

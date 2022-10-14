@@ -1,9 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Platform.Hosting;
-using Platform.Logging;
-
-try
+﻿try
 {
     SimpleFileLogger.WriteLine("Starting application 1");
 

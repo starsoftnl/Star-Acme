@@ -3,7 +3,7 @@ using System.Text;
 
 namespace LetsCrypt.Services;
 
-[Singleton(typeof(IDnsHostingService))]
+[Transient(typeof(IDnsHostingService))]
 internal class DnsHostingService : IDnsHostingService
 {
     private readonly ILogger<DnsHostingService> Logger;

@@ -8,17 +8,20 @@ internal class DeploymentServiceExchange : DeploymentServiceBase
     public DeploymentServiceExchange(
         ILogger<DeploymentServiceHttpSys> logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<DeployOptions> deployOptions,
+        IOptionsMonitor<CertificateOptions> certificateOptions,
         CertificateService certificateService)
-        : base(logger, mailService, deployOptions, certificateService)
+        : base(logger, mailService, certificateOptions, certificateService)
     {
     }
+
+    protected override int? GetPhaseCount()
+        => Target.Exchange?.Phase;
 
     protected override async Task DeployCertificateAsync(CancellationToken cancellationToken)
     {
         var exchange = Target.Exchange;
-        if (exchange?.Enabled == true)
-                await DeployCertificateAsync(exchange, cancellationToken);
+        if (exchange?.Enabled == true && exchange.Phase == Phase)
+            await DeployCertificateAsync(exchange, cancellationToken);
     }
 
     private async Task DeployCertificateAsync(CertificateTargetExchange exchange, CancellationToken cancellationToken)

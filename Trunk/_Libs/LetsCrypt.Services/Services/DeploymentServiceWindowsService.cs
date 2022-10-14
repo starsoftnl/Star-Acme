@@ -8,16 +8,19 @@ internal class DeploymentServiceWindowsService : DeploymentServiceBase
     public DeploymentServiceWindowsService(
         ILogger<DeploymentServiceWindowsService> logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<DeployOptions> deployOptions,
+        IOptionsMonitor<CertificateOptions> certificateOptions,
         CertificateService certificateService)
-        : base(logger, mailService, deployOptions, certificateService)
+        : base(logger, mailService, certificateOptions, certificateService)
     {
     }
+
+    protected override int? GetPhaseCount()
+        => Target.WindowsServices?.Max(s => s.Phase);
 
     protected override async Task DeployCertificateAsync(CancellationToken cancellationToken)
     {
         foreach (var ws in Target.WindowsServices)
-            if (ws?.Enabled == true)
+            if (ws?.Enabled == true && ws.Phase == Phase)
                 await DeployCertificateAsync(ws, cancellationToken);
     }
 

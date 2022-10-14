@@ -11,10 +11,10 @@ internal class CertificatePublisherBackgroundTask : WorkerBackgroundTask
     private readonly CertificateService CertificateService;
     private readonly DeploymentService DeploymentService;
     private readonly IOptionsMonitor<CertificateOptions> CertificateOptions;
-    private readonly IEMailService MailService;
+    private readonly ILetsCryptMailService MailService;
 
     public CertificatePublisherBackgroundTask(
-        IEMailService mailService,
+        ILetsCryptMailService mailService,
         CertificateService certificateService,
         DeploymentService deploymentService,
         IOptionsMonitor<CertificateOptions> certificateOptions)
@@ -99,26 +99,13 @@ internal class CertificatePublisherBackgroundTask : WorkerBackgroundTask
 
                 Logger.Error(ex, message);
 
-                await SendEmailNotificationAsync(ex, message, cancellationToken);
+                await MailService.SendEmailNotificationAsync(ex, message, cancellationToken);
 
                 if (next == null || next > now + TimeSpan.FromDays(1))
                     next = now + TimeSpan.FromDays(1);
             }
         }
 
-        return await DeploymentService.DeployCertificatesAsync( now, next, cancellationToken ) - DateTimeOffset.Now;
-    }
-
-    private async Task SendEmailNotificationAsync(Exception error, string message, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var text = message + "\r\n\r\n" + error.ToText();
-            await MailService.SendAsync("Lets Encrypt Certificate Update Failed", text, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            Logger.Warning(ex, "EMail notification failed");
-        }
+        return await DeploymentService.RunAsync( now, next, cancellationToken ) - DateTimeOffset.Now;
     }
 }

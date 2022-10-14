@@ -6,6 +6,7 @@ using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Runtime.ConstrainedExecution;
 using System.IO;
+using ACMESharp.Protocol.Resources;
 
 namespace LetsCrypt.Services.Services;
 
@@ -14,96 +15,63 @@ internal abstract class DeploymentServiceBase : IDeploymentService
 {
     protected readonly ILogger Logger;
     protected readonly ILetsCryptMailService MailService;
-    protected readonly IOptionsMonitor<DeployOptions> DeployOptions;
+    protected readonly IOptionsMonitor<CertificateOptions> CertificateOptions;
     protected readonly CertificateService CertificateService;
 
     public DeploymentServiceBase( 
         ILogger logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<DeployOptions> deployOptions,
+        IOptionsMonitor<CertificateOptions> certificateOptions,
         CertificateService certificateService)
     {
         Logger = logger;
         MailService = mailService;
-        DeployOptions = deployOptions;
+        CertificateOptions = certificateOptions;
         CertificateService = certificateService;
     }
 
-    public async Task DeployCertificateAsync(CertificateOrder order, CancellationToken cancellationToken)
+    public int? GetPhaseCount(CertificateTarget target)
     {
-        Order = order;
-        OrderId = order.Id;
-        DnsNames = order.DnsNames;
-        PfxPassword = order.PfxPassword;
+        Target = target;
 
-        foreach (var deploy in DeployOptions.CurrentValue)
-        {
-            Deploy = deploy;
-
-            foreach( var target in deploy.Targets )
-            {
-                var certificate = target.Certificate ?? deploy.Certificate;
-
-                if (!certificate.IsLike(OrderId)) 
-                    continue;
-
-                if (deploy.ExcludeTargets.Any(t => target.ComputerName.PatternMatch(t, true)))
-                    continue;
-
-                if (deploy.IncludeTargets.Length > 0 && !deploy.IncludeTargets.Any(t => target.ComputerName.PatternMatch(t, true)))
-                    continue;
-                
-                Target = target;
-                ComputerName = target.ComputerName;                
-                Username = target.Username ?? deploy.Username;
-                Password = target.Password ?? deploy.Password;
-                UncPath = (target.UncPath ?? deploy.UncPath ?? "\\\\{ComputerName}\\C$\\admin\\Certificate").Replace("{ComputerName}", ComputerName);
-                LocalPath = (target.LocalPath ?? deploy.LocalPath ?? "c:\\admin\\Certificate").Replace("{ComputerName}", ComputerName);
-
-                LoggerContext.Set("ComputerName", ComputerName);
-
-                IDisposable[] authentications = null!;
-
-                try
-                {
-                    authentications = target.Authentications.Select(a => Connect(a)).ToArray();
-
-                    await DeployCertificateAsync(cancellationToken);
-                }
-                catch( Exception ex )
-                {
-                    var message = $"Deployment of certificate {certificate} failed for target {target.ComputerName}";
-
-                    Logger.Error(ex, message);
-
-                    await MailService.SendEmailNotificationAsync(ex, message, cancellationToken);
-                }
-                finally
-                {
-                    if(authentications != null )
-                        foreach (var authentication in authentications)
-                        {
-                            try
-                            {
-                                authentication.Dispose();
-                            }
-                            catch( Exception ex )
-                            {
-                                Logger.Warning(ex, "Failed to dispose network connection");
-                            }
-                        }
-                        
-                }
-            }
-        }
+        return GetPhaseCount();
     }
+
+    public async Task DeployCertificateAsync(CertificateDeploy deployment, CertificateTarget target, int phase, CancellationToken cancellationToken)
+    {
+        Deploy = deployment;
+        Target = target;
+
+        ComputerName = Target.ComputerName;
+        Username = Target.Username ?? Deploy.Username;
+        Password = Target.Password ?? Deploy.Password;
+        UncPath = (Target.UncPath ?? Deploy.UncPath ?? "\\\\{ComputerName}\\C$\\admin\\Certificate").Replace("{ComputerName}", ComputerName);
+        LocalPath = (Target.LocalPath ?? Deploy.LocalPath ?? "c:\\admin\\Certificate").Replace("{ComputerName}", ComputerName);
+
+        OrderId = Target.Certificate ?? deployment.Certificate;
+        Order = CertificateOptions.CurrentValue.First(c => c.Id.IsLike(OrderId));
+
+        DnsNames = Order.DnsNames;
+        PfxPassword = Order.PfxPassword;
+
+        if (Deploy.ExcludeTargets.Any(t => Target.ComputerName.PatternMatch(t, true))) return;            
+        if (Deploy.IncludeTargets.Length > 0 && !Deploy.IncludeTargets.Any(t => target.ComputerName.PatternMatch(t, true))) return;
+
+        using var authentications = Authentications.Create(Target.Authentications);
+
+        await DeployCertificateAsync(cancellationToken);
+    }
+
+    protected abstract int? GetPhaseCount();
 
     protected abstract Task DeployCertificateAsync(CancellationToken cancellationToken);
 
     protected string ApplicationId { get; set; } = new Guid("{A5B777E5-17EE-443C-AA77-E3B7BF6F2295}").ToString("B");
-    protected CertificateOrder Order { get; set; } = default!;
+
+    protected CertificateOrder? Order { get; set; } = default!;
     protected CertificateDeploy Deploy { get; set; } = default!;
     protected CertificateTarget Target { get; set; } = default!;
+    protected int Phase { get; set; }
 
     protected string OrderId { get; set; } = default!;
     protected string[] DnsNames { get; set; } = Array.Empty<string>();
@@ -119,12 +87,6 @@ internal abstract class DeploymentServiceBase : IDeploymentService
 
     protected string GetNetworkCertificatePath()
         => Path.Join(UncPath, $"{OrderId}.pfx");
-
-    private NetworkConnection Connect( CertificateTargetAuthentication authentication )
-    {
-        var credentials = new NetworkCredential(authentication.Username, authentication.Password, authentication.Domain);
-        return new NetworkConnection(authentication.NetworkShare, credentials);
-    }
 
     protected async Task<byte[]?> CopyCertificateAsync(CancellationToken cancellationToken)
     {

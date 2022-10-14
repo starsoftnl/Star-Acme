@@ -2,5 +2,7 @@
 
 internal interface IDeploymentService
 {
-    Task DeployCertificateAsync(CertificateOrder order, CancellationToken cancellationToken);
+    int? GetPhaseCount(CertificateTarget target);
+
+    Task DeployCertificateAsync(CertificateDeploy deployment, CertificateTarget target, int phase, CancellationToken cancellationToken);
 }

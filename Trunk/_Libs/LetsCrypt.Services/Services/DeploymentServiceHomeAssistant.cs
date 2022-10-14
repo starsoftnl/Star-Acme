@@ -1,7 +1,5 @@
 ﻿using System.Net;
-using System.Runtime.ConstrainedExecution;
 using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
 
 namespace LetsCrypt.Services.Services;
 
@@ -10,15 +8,18 @@ internal class DeploymentServiceHomeAssistant : DeploymentServiceBase
     public DeploymentServiceHomeAssistant(
         ILogger<DeploymentServiceHomeAssistant> logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<DeployOptions> deployOptions,
+        IOptionsMonitor<CertificateOptions> certificateOptions,
         CertificateService certificateService)
-        : base(logger, mailService, deployOptions, certificateService)
+        : base(logger, mailService, certificateOptions, certificateService)
     {
     }
 
+    protected override int? GetPhaseCount()
+        => Target.HomeAssistant?.Phase;
+
     protected override async Task DeployCertificateAsync(CancellationToken cancellationToken)
     {
-        if (Target.HomeAssistant?.Enabled == true)
+        if (Target.HomeAssistant?.Enabled == true && Target.HomeAssistant.Phase == Phase)
             await DeployCertificateAsync(Target.HomeAssistant, cancellationToken);
     }
 

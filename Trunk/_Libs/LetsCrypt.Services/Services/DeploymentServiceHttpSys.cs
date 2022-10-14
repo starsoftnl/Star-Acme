@@ -8,16 +8,19 @@ internal class DeploymentServiceHttpSys : DeploymentServiceBase
     public DeploymentServiceHttpSys(
         ILogger<DeploymentServiceHttpSys> logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<DeployOptions> deployOptions,
+        IOptionsMonitor<CertificateOptions> certificateOptions,
         CertificateService certificateService)
-        : base(logger, mailService, deployOptions, certificateService)
+        : base(logger, mailService, certificateOptions, certificateService)
     {
     }
+
+    protected override int? GetPhaseCount()
+        => Target.HttpSys?.Max(h => h.Phase);
 
     protected override async Task DeployCertificateAsync(CancellationToken cancellationToken)
     {
         foreach (var http in Target.HttpSys)
-            if( http?.Enabled == true )
+            if( http?.Enabled == true && http.Phase == Phase)
                 await DeployCertificateAsync(http, cancellationToken);
     }
 

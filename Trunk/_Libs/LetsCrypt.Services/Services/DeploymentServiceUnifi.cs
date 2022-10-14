@@ -8,15 +8,18 @@ internal class DeploymentServiceUnifi : DeploymentServiceBase
     public DeploymentServiceUnifi(
         ILogger<DeploymentServiceUnifi> logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<DeployOptions> deployOptions,
+        IOptionsMonitor<CertificateOptions> certificateOptions,
         CertificateService certificateService)
-        : base(logger, mailService, deployOptions, certificateService)
+        : base(logger, mailService, certificateOptions, certificateService)
     {
     }
 
+    protected override int? GetPhaseCount()
+        => Target.Unifi?.Phase;
+
     protected override async Task DeployCertificateAsync(CancellationToken cancellationToken)
     {
-        if (Target.Unifi?.Enabled == true)
+        if (Target.Unifi?.Enabled == true && Target.Unifi.Phase == Phase)
             await DeployCertificateAsync(Target.Unifi, cancellationToken);
     }
 

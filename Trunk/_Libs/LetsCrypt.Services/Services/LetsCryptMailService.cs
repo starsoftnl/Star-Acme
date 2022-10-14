@@ -5,6 +5,7 @@ using static System.Net.Mime.MediaTypeNames;
 
 namespace LetsCrypt.Services;
 
+[Singleton(typeof(ILetsCryptMailService))]
 internal class LetsCryptMailService : ILetsCryptMailService
 {
     private readonly ILogger Logger;

@@ -8,15 +8,18 @@ internal class DeploymentServiceOctopus : DeploymentServiceBase
     public DeploymentServiceOctopus(
         ILogger<DeploymentServiceOctopus> logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<DeployOptions> deployOptions,
+        IOptionsMonitor<CertificateOptions> certificateOptions,
         CertificateService certificateService)
-        : base(logger, mailService, deployOptions, certificateService)
+        : base(logger, mailService, certificateOptions, certificateService)
     {
     }
 
+    protected override int? GetPhaseCount()
+        => Target.Octopus?.Phase;
+
     protected override async Task DeployCertificateAsync(CancellationToken cancellationToken)
     {
-        if (Target.Octopus?.Enabled == true)
+        if (Target.Octopus?.Enabled == true && Target.Octopus.Phase == Phase)
             await DeployCertificateAsync(Target.Octopus, cancellationToken);
     }
 

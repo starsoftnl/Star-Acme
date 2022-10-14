@@ -7,16 +7,19 @@ internal class DeploymentServiceRdp : DeploymentServiceBase
     public DeploymentServiceRdp(
         ILogger<DeploymentServiceRdp> logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<DeployOptions> deployOptions,
+        IOptionsMonitor<CertificateOptions> certificateOptions,
         CertificateService certificateService)
-        : base(logger, mailService, deployOptions, certificateService)
+        : base(logger, mailService, certificateOptions, certificateService)
     {
     }
+
+    protected override int? GetPhaseCount()
+        => Target.Rdp?.Phase;
 
     protected override async Task DeployCertificateAsync(CancellationToken cancellationToken)
     {
         var rdp = Target.Rdp;
-        if(rdp?.Enabled == true )
+        if(rdp?.Enabled == true && rdp.Phase == Phase)
             await DeployCertificateAsync(rdp, cancellationToken);
     }
 

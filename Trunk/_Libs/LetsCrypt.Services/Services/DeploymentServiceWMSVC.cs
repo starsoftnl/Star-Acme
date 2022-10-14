@@ -8,15 +8,18 @@ internal class DeploymentServiceWMSVC : DeploymentServiceBase
     public DeploymentServiceWMSVC(
         ILogger<DeploymentServiceWMSVC> logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<DeployOptions> deployOptions,
+        IOptionsMonitor<CertificateOptions> certificateOptions,
         CertificateService certificateService)
-        : base(logger, mailService, deployOptions, certificateService)
+        : base(logger, mailService, certificateOptions, certificateService)
     {
     }
 
+    protected override int? GetPhaseCount()
+        => Target.WMSVC?.Phase;
+
     protected override async Task DeployCertificateAsync(CancellationToken cancellationToken)
     {
-        if (Target.WMSVC?.Enabled == true)
+        if (Target.WMSVC?.Enabled == true && Target.WMSVC.Phase == Phase)
             await DeployCertificateAsync(Target.WMSVC, cancellationToken);
     }
 

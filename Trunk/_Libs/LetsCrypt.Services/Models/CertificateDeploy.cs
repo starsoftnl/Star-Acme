@@ -2,6 +2,8 @@
 
 internal class CertificateDeploy
 {
+    public string? Name { get; set; }
+
     public string Certificate { get; set; } = default!;
 
     public string? Username { get; set; }

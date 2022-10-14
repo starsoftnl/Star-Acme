@@ -1,4 +1,6 @@
-﻿namespace LetsCrypt.Services.Models;
+﻿using System.Management.Automation;
+
+namespace LetsCrypt.Services.Models;
 
 internal class CertificateTarget
 {
@@ -41,5 +43,4 @@ internal class CertificateTarget
 
     public CertificateTargetWindowsService[] WindowsServices { get; set; }
         = Array.Empty<CertificateTargetWindowsService>();
-
 }
