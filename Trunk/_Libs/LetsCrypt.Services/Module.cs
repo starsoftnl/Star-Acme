@@ -1,4 +1,7 @@
-﻿global using System.Net.Http.Json;
+﻿global using System.Net;
+global using System.Management.Automation;
+global using System.Management.Automation.Runspaces;
+global using System.Net.Http.Json;
 global using System.Security.Cryptography.X509Certificates;
 
 global using Microsoft.Extensions.Options;

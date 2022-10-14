@@ -1,6 +1,6 @@
 ﻿namespace LetsCrypt.Services.Models;
 
-internal class CertificateTargetWindowsService : CertificateTargetBase
+internal class DeploymentTargetWindowsService : DeploymentTargetBase
 {
     public string ServiceDisplayName { get; set; } = default!;
 }

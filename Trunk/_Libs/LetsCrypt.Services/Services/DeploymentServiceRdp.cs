@@ -7,23 +7,30 @@ internal class DeploymentServiceRdp : DeploymentServiceBase
     public DeploymentServiceRdp(
         ILogger<DeploymentServiceRdp> logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<CertificateOptions> certificateOptions,
+        IOptionsMonitor<CertificatesOptions> certificateOptions,
         CertificateService certificateService)
         : base(logger, mailService, certificateOptions, certificateService)
     {
     }
 
-    protected override int? GetPhaseCount()
-        => Target.Rdp?.Phase;
-
-    protected override async Task DeployCertificateAsync(CancellationToken cancellationToken)
+    protected override void GetPhaseCount(out int min, out int max)
     {
-        var rdp = Target.Rdp;
-        if(rdp?.Enabled == true && rdp.Phase == Phase)
-            await DeployCertificateAsync(rdp, cancellationToken);
+        min = Target.Rdp?.Phase ?? 0;
+        max = Target.Rdp?.Phase ?? 0;
     }
 
-    private async Task DeployCertificateAsync(CertificateTargetRdp rdp, CancellationToken cancellationToken)
+    protected override async Task<DateTimeOffset?> DeployCertificateAsync(CancellationToken cancellationToken)
+    {
+        if (Target.Rdp?.Enabled != true || Target.Rdp.Phase != Phase) return null;
+
+        var next = await UpdateCertificateAsync(cancellationToken);
+
+        await DeployCertificateAsync(Target.Rdp, cancellationToken);
+
+        return next;
+    }
+
+    private async Task DeployCertificateAsync(DeploymentTargetRdp rdp, CancellationToken cancellationToken)
     {
         var pfx = await CopyCertificateAsync(cancellationToken);
         if (pfx == null) return;

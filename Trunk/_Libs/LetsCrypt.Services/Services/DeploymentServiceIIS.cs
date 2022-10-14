@@ -7,20 +7,34 @@ internal class DeploymentServiceIIS : DeploymentServiceBase
     public DeploymentServiceIIS(
         ILogger<DeploymentServiceIIS> logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<CertificateOptions> certificateOptions,
+        IOptionsMonitor<CertificatesOptions> certificateOptions,
         CertificateService certificateService)
         : base(logger, mailService, certificateOptions, certificateService)
     {
     }
 
-    protected override int? GetPhaseCount()
-        => Target.IIS?.Max(h => h.Phase);
-
-    protected override async Task DeployCertificateAsync(CancellationToken cancellationToken)
+    protected override void GetPhaseCount(out int min, out int max)
     {
+        if (Target.IIS != null && Target.IIS.Length > 0)
+        {
+            min = Target.IIS.Min(h => h.Phase);
+            max = Target.IIS.Max(h => h.Phase);
+        }
+        else max = min = 0;
+    }
+
+    protected override async Task<DateTimeOffset?> DeployCertificateAsync(CancellationToken cancellationToken)
+    {
+        DateTimeOffset? next = null;
+
         foreach (var iis in Target.IIS)
-            if( iis?.Enabled == true && iis.Phase == Phase )
+            if (iis?.Enabled == true && iis.Phase == Phase)
+            {
+                next ??= await UpdateCertificateAsync(cancellationToken);
                 await DeployCertificateAsync(iis, cancellationToken);
+            }
+
+        return next;
     }
 
     // Requires
@@ -28,7 +42,7 @@ internal class DeploymentServiceIIS : DeploymentServiceBase
     // Install-Module –Name IISAdministration -RequiredVersion 1.1.0.0
     // Install-Module –Name IISAdministration -Force
 
-    private async Task DeployCertificateAsync(CertificateTargetIIS iis, CancellationToken cancellationToken)
+    private async Task DeployCertificateAsync(DeploymentTargetIIS iis, CancellationToken cancellationToken)
     {
         var pfx = await CopyCertificateAsync(cancellationToken);
         if (pfx == null) return;

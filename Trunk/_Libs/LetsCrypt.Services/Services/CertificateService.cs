@@ -37,19 +37,19 @@ internal class CertificateService
         DnsHostingService = dnsHostingService;
     }
 
-    public async Task<bool> UpdateOrCreateCertificate(CertificateOrder order, CancellationToken cancellationToken)
+    public async Task<bool> UpdateOrCreateCertificate(string id, CertificateOptions order, CancellationToken cancellationToken)
     {
         using var http = CreateHttpClient(cancellationToken);
         using var acme = await CreateAcmeClientAndAccount(http, cancellationToken);
 
-        var details = await LoadOrderDetailsAsync(order.Id, cancellationToken);
+        var details = await LoadOrderDetailsAsync(id, cancellationToken);
         
         if( details == null )
         {
 
             Logger.Information("Create new order details");
             details = await acme.CreateOrderAsync(order.DnsNames, null, null, cancellationToken);
-            await SaveOrderDetailsAsync(order.Id, details, cancellationToken);
+            await SaveOrderDetailsAsync(id, details, cancellationToken);
             LoggerContext.Set("OrderDetails", details.OrderUrl);
             LoggerContext.Set("OrderExpires", details.Payload.Expires);
             Logger.Information("Created new order details");
@@ -58,7 +58,7 @@ internal class CertificateService
         {
             Logger.Information("Load order details");
             details = await acme.GetOrderDetailsAsync(details.OrderUrl, existing: details, cancellationToken);
-            await SaveOrderDetailsAsync(order.Id, details, cancellationToken);
+            await SaveOrderDetailsAsync(id, details, cancellationToken);
             LoggerContext.Set("OrderDetails", details.OrderUrl);
             LoggerContext.Set("OrderExpires", details.Payload.Expires);
             Logger.Information("Loaded existing order details");
@@ -67,7 +67,7 @@ internal class CertificateService
         if (details.Payload.Status == InvalidStatus)
         {
             Logger.Warning($"Order has state invalid. Order deleted");
-            var path = Path.Combine(PlatformOptions.CurrentValue.SharedDataPath, $"Order {order.Id}.json");
+            var path = Path.Combine(PlatformOptions.CurrentValue.SharedDataPath, $"Order {id}.json");
             File.Delete(path);
             return false;
         }
@@ -143,7 +143,7 @@ internal class CertificateService
             Logger.Information($"Order validated, create public/private key pair");
 
             var keypair = CreateKeyPair(order);
-            await SaveOrderKeyAsync(order.Id, keypair, cancellationToken);
+            await SaveOrderKeyAsync(id, keypair, cancellationToken);
 
             Logger.Information($"Finalize Order");
 
@@ -161,7 +161,7 @@ internal class CertificateService
         {
             Logger.Information($"Order finalized, get certificate");
 
-            var key = await LoadOrderKeyAsync(order.Id, cancellationToken);
+            var key = await LoadOrderKeyAsync(id, cancellationToken);
             if (key == null) throw new Exception("Private key is missing");
 
             var response = await acme.GetAsync(details.Payload.Certificate);
@@ -172,7 +172,7 @@ internal class CertificateService
             var certificate = PkiCertificate.From(cert);
             var pfx = certificate.Export(PkiArchiveFormat.Pkcs12, key.PrivateKey, null, order.PfxPassword?.ToCharArray());
 
-            await SaveCertificateAsync(order.Id, pfx, cancellationToken);
+            await SaveCertificateAsync(id, pfx, cancellationToken);
 
             LoggerContext.Set("Thumbprint", cert.Thumbprint);
             LoggerContext.Set("Start", cert.NotBefore.ToString("dd-MM-yyy HH:mm::ss") + " UTC");
@@ -190,7 +190,7 @@ internal class CertificateService
     }
 
 
-    private PkiKeyPair CreateKeyPair(CertificateOrder order)
+    private PkiKeyPair CreateKeyPair(CertificateOptions order)
     {
         switch (order.KeyAlgorithm)
         {
@@ -202,7 +202,7 @@ internal class CertificateService
         }
     }
 
-    private byte[] CreateSigningRequest(CertificateOrder order, PkiKeyPair keyPair)
+    private byte[] CreateSigningRequest(CertificateOptions order, PkiKeyPair keyPair)
     {
         var csr = new PkiCertificateSigningRequest($"CN={order.DnsNames.First()}", keyPair, PkiHashAlgorithm.Sha256);
         csr.CertificateExtensions.Add(PkiCertificateExtension.CreateDnsSubjectAlternativeNames(order.DnsNames));

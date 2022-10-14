@@ -7,23 +7,30 @@ internal class DeploymentServiceSqlServer : DeploymentServiceBase
     public DeploymentServiceSqlServer(
         ILogger<DeploymentServiceSqlServer> logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<CertificateOptions> certificateOptions,
+        IOptionsMonitor<CertificatesOptions> certificateOptions,
         CertificateService certificateService)
         : base(logger, mailService, certificateOptions, certificateService)
     {
     }
 
-    protected override int? GetPhaseCount()
-        => Target.SqlServer?.Phase;
-
-    protected override async Task DeployCertificateAsync(CancellationToken cancellationToken)
+    protected override void GetPhaseCount(out int min, out int max)
     {
-        var sql = Target.SqlServer;
-        if(sql?.Enabled == true && sql.Phase == Phase)
-            await DeployCertificateAsync(sql, cancellationToken);
+        min = Target.SqlServer?.Phase ?? 0;
+        max = Target.SqlServer?.Phase ?? 0;
     }
 
-    private async Task DeployCertificateAsync(CertificateTargetSqlServer sql, CancellationToken cancellationToken)
+    protected override async Task<DateTimeOffset?> DeployCertificateAsync(CancellationToken cancellationToken)
+    {
+        if (Target.SqlServer?.Enabled != true || Target.SqlServer.Phase != Phase) return null;
+
+        var next = await UpdateCertificateAsync(cancellationToken);
+
+        await DeployCertificateAsync(Target.SqlServer, cancellationToken);
+
+        return next;
+    }
+
+    private async Task DeployCertificateAsync(DeploymentTargetSqlServer sql, CancellationToken cancellationToken)
     {
         var pfx = await CopyCertificateAsync(cancellationToken);
         if (pfx == null) return;

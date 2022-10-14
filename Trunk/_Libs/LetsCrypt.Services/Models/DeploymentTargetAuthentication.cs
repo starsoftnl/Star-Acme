@@ -1,6 +1,6 @@
 ﻿namespace LetsCrypt.Services.Models;
 
-internal class CertificateTargetAuthentication
+internal class DeploymentTargetAuthentication
 {
     public string NetworkShare { get; set; } = default!;
 

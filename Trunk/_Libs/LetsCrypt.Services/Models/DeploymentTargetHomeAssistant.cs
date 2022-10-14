@@ -1,6 +1,6 @@
 ﻿namespace LetsCrypt.Services.Models;
 
-internal class CertificateTargetHomeAssistant : CertificateTargetBase
+internal class DeploymentTargetHomeAssistant : DeploymentTargetBase
 {
     public string SharedFolder { get; set; } = "\\ssl";
 

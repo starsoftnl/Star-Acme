@@ -8,23 +8,30 @@ internal class DeploymentServiceExchange : DeploymentServiceBase
     public DeploymentServiceExchange(
         ILogger<DeploymentServiceHttpSys> logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<CertificateOptions> certificateOptions,
+        IOptionsMonitor<CertificatesOptions> certificateOptions,
         CertificateService certificateService)
         : base(logger, mailService, certificateOptions, certificateService)
     {
     }
 
-    protected override int? GetPhaseCount()
-        => Target.Exchange?.Phase;
-
-    protected override async Task DeployCertificateAsync(CancellationToken cancellationToken)
+    protected override void GetPhaseCount(out int min, out int max)
     {
-        var exchange = Target.Exchange;
-        if (exchange?.Enabled == true && exchange.Phase == Phase)
-            await DeployCertificateAsync(exchange, cancellationToken);
+        min = Target.Exchange?.Phase ?? 0;
+        max = Target.Exchange?.Phase ?? 0;
     }
 
-    private async Task DeployCertificateAsync(CertificateTargetExchange exchange, CancellationToken cancellationToken)
+    protected override async Task<DateTimeOffset?> DeployCertificateAsync(CancellationToken cancellationToken)
+    {
+        if (Target.Exchange?.Enabled != true || Target.Exchange.Phase != Phase) return null;
+
+        var next = await UpdateCertificateAsync(cancellationToken);
+
+        await DeployCertificateAsync(Target.Exchange, cancellationToken);
+
+        return next;
+    }
+
+    private async Task DeployCertificateAsync(DeploymentTargetExchange exchange, CancellationToken cancellationToken)
     {
         var pfx = await CopyCertificateAsync(cancellationToken);
         if (pfx == null) return;

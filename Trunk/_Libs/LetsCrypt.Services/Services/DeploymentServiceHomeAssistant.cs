@@ -8,22 +8,30 @@ internal class DeploymentServiceHomeAssistant : DeploymentServiceBase
     public DeploymentServiceHomeAssistant(
         ILogger<DeploymentServiceHomeAssistant> logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<CertificateOptions> certificateOptions,
+        IOptionsMonitor<CertificatesOptions> certificateOptions,
         CertificateService certificateService)
         : base(logger, mailService, certificateOptions, certificateService)
     {
     }
 
-    protected override int? GetPhaseCount()
-        => Target.HomeAssistant?.Phase;
-
-    protected override async Task DeployCertificateAsync(CancellationToken cancellationToken)
+    protected override void GetPhaseCount(out int min, out int max)
     {
-        if (Target.HomeAssistant?.Enabled == true && Target.HomeAssistant.Phase == Phase)
-            await DeployCertificateAsync(Target.HomeAssistant, cancellationToken);
+        min = Target.HomeAssistant?.Phase ?? 0;
+        max = Target.HomeAssistant?.Phase ?? 0;
     }
 
-    private async Task DeployCertificateAsync(CertificateTargetHomeAssistant ha, CancellationToken cancellationToken)
+    protected override async Task<DateTimeOffset?> DeployCertificateAsync(CancellationToken cancellationToken)
+    {
+        if (Target.HomeAssistant?.Enabled != true || Target.HomeAssistant.Phase != Phase) return null;
+
+        var next = await UpdateCertificateAsync(cancellationToken);
+
+        await DeployCertificateAsync(Target.HomeAssistant, cancellationToken);
+
+        return next;
+    }
+
+    private async Task DeployCertificateAsync(DeploymentTargetHomeAssistant ha, CancellationToken cancellationToken)
     {
         var pfx = await CertificateService.LoadCertificateAsync(OrderId, cancellationToken);
         if (pfx == null) return;

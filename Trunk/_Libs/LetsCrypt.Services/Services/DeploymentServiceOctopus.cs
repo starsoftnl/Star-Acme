@@ -8,22 +8,30 @@ internal class DeploymentServiceOctopus : DeploymentServiceBase
     public DeploymentServiceOctopus(
         ILogger<DeploymentServiceOctopus> logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<CertificateOptions> certificateOptions,
+        IOptionsMonitor<CertificatesOptions> certificateOptions,
         CertificateService certificateService)
         : base(logger, mailService, certificateOptions, certificateService)
     {
     }
 
-    protected override int? GetPhaseCount()
-        => Target.Octopus?.Phase;
-
-    protected override async Task DeployCertificateAsync(CancellationToken cancellationToken)
+    protected override void GetPhaseCount(out int min, out int max)
     {
-        if (Target.Octopus?.Enabled == true && Target.Octopus.Phase == Phase)
-            await DeployCertificateAsync(Target.Octopus, cancellationToken);
+        min = Target.Octopus?.Phase ?? 0;
+        max = Target.Octopus?.Phase ?? 0;
     }
 
-    private async Task DeployCertificateAsync(CertificateTargetOctopus octopus, CancellationToken cancellationToken)
+    protected override async Task<DateTimeOffset?> DeployCertificateAsync(CancellationToken cancellationToken)
+    {
+        if (Target.Octopus?.Enabled != true || Target.Octopus.Phase != Phase) return null;
+
+        var next = await UpdateCertificateAsync(cancellationToken);
+
+        await DeployCertificateAsync(Target.Octopus, cancellationToken);
+
+        return next;
+    }
+
+    private async Task DeployCertificateAsync(DeploymentTargetOctopus octopus, CancellationToken cancellationToken)
     {
         var pfx = await CopyCertificateAsync(cancellationToken);
         if (pfx == null) return;

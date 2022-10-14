@@ -1,27 +1,17 @@
-﻿using System.Net;
-using System.Management.Automation;
-using System.Management.Automation.Runspaces;
-using System.Security.Cryptography.X509Certificates;
-using System.Security.AccessControl;
-using System.Security.Cryptography;
-using System.Runtime.ConstrainedExecution;
-using System.IO;
-using ACMESharp.Protocol.Resources;
-
-namespace LetsCrypt.Services.Services;
+﻿namespace LetsCrypt.Services.Services;
 
 [Singleton(typeof(IDeploymentService))]
 internal abstract class DeploymentServiceBase : IDeploymentService
 {
     protected readonly ILogger Logger;
     protected readonly ILetsCryptMailService MailService;
-    protected readonly IOptionsMonitor<CertificateOptions> CertificateOptions;
+    protected readonly IOptionsMonitor<CertificatesOptions> CertificateOptions;
     protected readonly CertificateService CertificateService;
 
     public DeploymentServiceBase( 
         ILogger logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<CertificateOptions> certificateOptions,
+        IOptionsMonitor<CertificatesOptions> certificateOptions,
         CertificateService certificateService)
     {
         Logger = logger;
@@ -30,47 +20,51 @@ internal abstract class DeploymentServiceBase : IDeploymentService
         CertificateService = certificateService;
     }
 
-    public int? GetPhaseCount(CertificateTarget target)
+    public void GetPhaseCount(DeploymentTarget target, out int min, out int max)
     {
         Target = target;
 
-        return GetPhaseCount();
+        GetPhaseCount(out min, out max);
     }
 
-    public async Task DeployCertificateAsync(CertificateDeploy deployment, CertificateTarget target, int phase, CancellationToken cancellationToken)
+    public async Task<DateTimeOffset?> RunAsync(DateTimeOffset now, DeploymentOptions deployment, string computerName, DeploymentTarget target, int phase, CancellationToken cancellationToken)
     {
+        Now = now;
         Deploy = deployment;
         Target = target;
+        Phase = phase;
 
-        ComputerName = Target.ComputerName;
+        ComputerName = computerName;
         Username = Target.Username ?? Deploy.Username;
         Password = Target.Password ?? Deploy.Password;
         UncPath = (Target.UncPath ?? Deploy.UncPath ?? "\\\\{ComputerName}\\C$\\admin\\Certificate").Replace("{ComputerName}", ComputerName);
         LocalPath = (Target.LocalPath ?? Deploy.LocalPath ?? "c:\\admin\\Certificate").Replace("{ComputerName}", ComputerName);
 
         OrderId = Target.Certificate ?? deployment.Certificate;
-        Order = CertificateOptions.CurrentValue.First(c => c.Id.IsLike(OrderId));
+        Order = !string.IsNullOrEmpty(OrderId) && CertificateOptions.CurrentValue.TryGetValue(OrderId, out var order) ? order :
+            throw new Exception($"No certificate with name {OrderId}");
 
         DnsNames = Order.DnsNames;
         PfxPassword = Order.PfxPassword;
 
-        if (Deploy.ExcludeTargets.Any(t => Target.ComputerName.PatternMatch(t, true))) return;            
-        if (Deploy.IncludeTargets.Length > 0 && !Deploy.IncludeTargets.Any(t => target.ComputerName.PatternMatch(t, true))) return;
+        if (Deploy.ExcludeTargets.Any(t => computerName.PatternMatch(t, true))) return null;            
+        if (Deploy.IncludeTargets.Length > 0 && !Deploy.IncludeTargets.Any(t => computerName.PatternMatch(t, true))) return null;
 
         using var authentications = Authentications.Create(Target.Authentications);
 
-        await DeployCertificateAsync(cancellationToken);
+        return await DeployCertificateAsync(cancellationToken);
     }
 
-    protected abstract int? GetPhaseCount();
+    protected abstract void GetPhaseCount(out int min, out int max);
 
-    protected abstract Task DeployCertificateAsync(CancellationToken cancellationToken);
+    protected abstract Task<DateTimeOffset?> DeployCertificateAsync(CancellationToken cancellationToken);
 
     protected string ApplicationId { get; set; } = new Guid("{A5B777E5-17EE-443C-AA77-E3B7BF6F2295}").ToString("B");
 
-    protected CertificateOrder? Order { get; set; } = default!;
-    protected CertificateDeploy Deploy { get; set; } = default!;
-    protected CertificateTarget Target { get; set; } = default!;
+    protected DateTimeOffset Now { get; set; } = default!;
+    protected CertificateOptions? Order { get; set; } = default!;
+    protected DeploymentOptions Deploy { get; set; } = default!;
+    protected DeploymentTarget Target { get; set; } = default!;
     protected int Phase { get; set; }
 
     protected string OrderId { get; set; } = default!;
@@ -87,6 +81,72 @@ internal abstract class DeploymentServiceBase : IDeploymentService
 
     protected string GetNetworkCertificatePath()
         => Path.Join(UncPath, $"{OrderId}.pfx");
+
+    protected async Task<DateTimeOffset?> UpdateCertificateAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var pfx = await CertificateService.LoadCertificateAsync(OrderId, cancellationToken);
+            var certificate = pfx == null ? null : new X509Certificate2(pfx, PfxPassword);
+
+            var lifetime = 0.0;
+            var renewalDate = DateTimeOffset.UtcNow;
+
+            LoggerContext.Set("Order", OrderId);
+
+            if (certificate != null)
+            {
+                LoggerContext.Set("Thumbprint", certificate.Thumbprint);
+                LoggerContext.Set("Start", certificate.NotBefore.ToString("dd-MM-yyy HH:mm::ss") + " UTC");
+                LoggerContext.Set("Expiration", certificate.NotAfter.ToString("dd-MM-yyy HH:mm::ss") + " UTC");
+
+                lifetime = (certificate.NotAfter - certificate.NotBefore).TotalDays;
+                renewalDate = (DateTimeOffset)certificate.NotBefore.ToUniversalTime() + TimeSpan.FromDays(lifetime * Order.RenewalFactor);
+            }
+
+            if (certificate != null && DateTimeOffset.UtcNow > renewalDate)
+            {
+                Logger.Information($"Existing certificates lifetime has exceeded {Order.RenewalFactor * 100}%. Removing it now");
+                CertificateService.DeleteOrder(OrderId);
+                CertificateService.DeleteCertificate(OrderId);
+                certificate = null;
+            }
+
+            if (certificate != null)
+            {
+                Logger.Information($"Existing certificate is still valid. Recheck at {renewalDate}");
+                return renewalDate;
+            }
+
+            if (!await CertificateService.UpdateOrCreateCertificate(OrderId, Order, cancellationToken))
+                return Now + TimeSpan.FromHours(1);
+
+            pfx = await CertificateService.LoadCertificateAsync(OrderId, cancellationToken);
+            certificate = pfx == null ? null : new X509Certificate2(pfx, PfxPassword);
+
+            LoggerContext.Set("Thumbprint", certificate?.Thumbprint);
+
+            if (certificate == null)
+                return Now + TimeSpan.FromHours(1);
+
+            lifetime = (certificate.NotAfter - certificate.NotBefore).TotalDays;
+            renewalDate = (DateTimeOffset)certificate.NotBefore.ToUniversalTime() + TimeSpan.FromDays(lifetime * Order.RenewalFactor);
+
+            Logger.Information($"Got new certificate. Recheck at {renewalDate}");
+
+            return renewalDate;
+        }
+        catch (Exception ex)
+        {
+            var message = $"Certificate update failed for order {OrderId}";
+
+            Logger.Error(ex, message);
+
+            await MailService.SendEmailNotificationAsync(ex, message, cancellationToken);
+
+            return DateTimeOffset.Now + TimeSpan.FromHours(1);
+        }
+    }
 
     protected async Task<byte[]?> CopyCertificateAsync(CancellationToken cancellationToken)
     {
@@ -268,7 +328,9 @@ internal abstract class DeploymentServiceBase : IDeploymentService
     {
         var connectionInfo = new WSManConnectionInfo();
         connectionInfo.ComputerName = ComputerName;
-        connectionInfo.Credential = new PSCredential(Username, new NetworkCredential("", Password).SecurePassword);
+
+        if( Username != null && Password != null )
+            connectionInfo.Credential = new PSCredential(Username, new NetworkCredential("", Password).SecurePassword);
 
         using var runspace = RunspaceFactory.CreateRunspace(connectionInfo);
         runspace.Open();

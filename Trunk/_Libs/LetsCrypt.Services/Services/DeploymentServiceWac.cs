@@ -8,22 +8,30 @@ internal class DeploymentServiceWac : DeploymentServiceBase
     public DeploymentServiceWac(
         ILogger<DeploymentServiceWac> logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<CertificateOptions> certificateOptions,
+        IOptionsMonitor<CertificatesOptions> certificateOptions,
         CertificateService certificateService)
         : base(logger, mailService, certificateOptions, certificateService)
     {
     }
 
-    protected override int? GetPhaseCount()
-        => Target.Wac?.Phase;
-
-    protected override async Task DeployCertificateAsync(CancellationToken cancellationToken)
+    protected override void GetPhaseCount(out int min, out int max)
     {
-        if (Target.Wac?.Enabled == true && Target.Wac.Phase == Phase)
-            await DeployCertificateAsync(Target.Wac, cancellationToken);
+        min = Target.Wac?.Phase ?? 0;
+        max = Target.Wac?.Phase ?? 0;
     }
 
-    private async Task DeployCertificateAsync(CertificateTargetWac wac, CancellationToken cancellationToken)
+    protected override async Task<DateTimeOffset?> DeployCertificateAsync(CancellationToken cancellationToken)
+    {
+        if (Target.Wac?.Enabled != true || Target.Wac.Phase != Phase) return null;
+
+        var next = await UpdateCertificateAsync(cancellationToken);
+
+        await DeployCertificateAsync(Target.Wac, cancellationToken);
+
+        return next;
+    }
+
+    private async Task DeployCertificateAsync(DeploymentTargetWac wac, CancellationToken cancellationToken)
     {
         var pfx = await CopyCertificateAsync(cancellationToken);
         if (pfx == null) return;

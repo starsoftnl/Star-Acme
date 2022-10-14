@@ -12,7 +12,7 @@ internal class Authentications : IDisposable
 {
     private List<NetworkConnection> Connections = new();
 
-    public static Authentications Create(CertificateTargetAuthentication[] authentications)
+    public static Authentications Create(DeploymentTargetAuthentication[] authentications)
     {
         var result = new Authentications();
 
@@ -31,7 +31,7 @@ internal class Authentications : IDisposable
         }
     }
 
-    private static NetworkConnection Connect(CertificateTargetAuthentication authentication)
+    private static NetworkConnection Connect(DeploymentTargetAuthentication authentication)
     {
         var credentials = new NetworkCredential(authentication.Username, authentication.Password, authentication.Domain);
         return new NetworkConnection(authentication.NetworkShare, credentials);

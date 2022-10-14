@@ -2,7 +2,7 @@
 
 internal interface IDeploymentService
 {
-    int? GetPhaseCount(CertificateTarget target);
+    void GetPhaseCount(DeploymentTarget target, out int min, out int max);
 
-    Task DeployCertificateAsync(CertificateDeploy deployment, CertificateTarget target, int phase, CancellationToken cancellationToken);
+    Task<DateTimeOffset?> RunAsync(DateTimeOffset now, DeploymentOptions deployment, string computerName, DeploymentTarget target, int phase, CancellationToken cancellationToken);
 }

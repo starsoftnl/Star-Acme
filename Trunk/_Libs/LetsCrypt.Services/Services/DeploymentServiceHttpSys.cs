@@ -8,23 +8,37 @@ internal class DeploymentServiceHttpSys : DeploymentServiceBase
     public DeploymentServiceHttpSys(
         ILogger<DeploymentServiceHttpSys> logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<CertificateOptions> certificateOptions,
+        IOptionsMonitor<CertificatesOptions> certificateOptions,
         CertificateService certificateService)
         : base(logger, mailService, certificateOptions, certificateService)
     {
     }
 
-    protected override int? GetPhaseCount()
-        => Target.HttpSys?.Max(h => h.Phase);
-
-    protected override async Task DeployCertificateAsync(CancellationToken cancellationToken)
+    protected override void GetPhaseCount(out int min, out int max)
     {
-        foreach (var http in Target.HttpSys)
-            if( http?.Enabled == true && http.Phase == Phase)
-                await DeployCertificateAsync(http, cancellationToken);
+        if (Target.HttpSys != null && Target.HttpSys.Length > 0)
+        {
+            min = Target.HttpSys.Min(h => h.Phase);
+            max = Target.HttpSys.Max(h => h.Phase);
+        }
+        else max = min = 0;
     }
 
-    private async Task DeployCertificateAsync(CertificateTargetHttpSys http, CancellationToken cancellationToken)
+    protected override async Task<DateTimeOffset?> DeployCertificateAsync(CancellationToken cancellationToken)
+    {
+        DateTimeOffset? next = null;
+
+        foreach (var http in Target.HttpSys)
+            if (http?.Enabled == true && http.Phase == Phase)
+            {
+                next ??= await UpdateCertificateAsync(cancellationToken);
+                await DeployCertificateAsync(http, cancellationToken);
+            }
+
+        return next;
+    }
+
+    private async Task DeployCertificateAsync(DeploymentTargetHttpSys http, CancellationToken cancellationToken)
     {
         var pfx = await CopyCertificateAsync(cancellationToken);
         if (pfx == null) return;

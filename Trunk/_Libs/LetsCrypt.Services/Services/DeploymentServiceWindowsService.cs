@@ -8,23 +8,37 @@ internal class DeploymentServiceWindowsService : DeploymentServiceBase
     public DeploymentServiceWindowsService(
         ILogger<DeploymentServiceWindowsService> logger,
         ILetsCryptMailService mailService,
-        IOptionsMonitor<CertificateOptions> certificateOptions,
+        IOptionsMonitor<CertificatesOptions> certificateOptions,
         CertificateService certificateService)
         : base(logger, mailService, certificateOptions, certificateService)
     {
     }
 
-    protected override int? GetPhaseCount()
-        => Target.WindowsServices?.Max(s => s.Phase);
-
-    protected override async Task DeployCertificateAsync(CancellationToken cancellationToken)
+    protected override void GetPhaseCount(out int min, out int max)
     {
-        foreach (var ws in Target.WindowsServices)
-            if (ws?.Enabled == true && ws.Phase == Phase)
-                await DeployCertificateAsync(ws, cancellationToken);
+        if (Target.WindowsServices != null && Target.WindowsServices.Length > 0)
+        {
+            min = Target.WindowsServices.Min(h => h.Phase);
+            max = Target.WindowsServices.Max(h => h.Phase);
+        }
+        else max = min = 0;
     }
 
-    private async Task DeployCertificateAsync(CertificateTargetWindowsService ws, CancellationToken cancellationToken)
+    protected override async Task<DateTimeOffset?> DeployCertificateAsync(CancellationToken cancellationToken)
+    {
+        DateTimeOffset? next = null;
+
+        foreach (var service in Target.WindowsServices)
+            if (service?.Enabled == true && service.Phase == Phase)
+            {
+                next ??= await UpdateCertificateAsync(cancellationToken);
+                await DeployCertificateAsync(service, cancellationToken);
+            }
+
+        return next;
+    }
+
+    private async Task DeployCertificateAsync(DeploymentTargetWindowsService ws, CancellationToken cancellationToken)
     {
         var pfx = await CopyCertificateAsync(cancellationToken);
         if (pfx == null) return;

@@ -1,6 +1,6 @@
 ﻿namespace LetsCrypt.Services.Models;
 
-internal class CertificateTargetOctopus : CertificateTargetBase
+internal class DeploymentTargetOctopus : DeploymentTargetBase
 {
     public string? OctopusPath { get; set; }
     public string? Instance { get; set; }

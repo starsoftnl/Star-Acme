@@ -1,6 +1,6 @@
 ﻿namespace LetsCrypt.Services.Models;
 
-internal class CertificateTargetIIS : CertificateTargetBase
+internal class DeploymentTargetIIS : DeploymentTargetBase
 {
     public bool RestartService { get; set; }
     public string Website { get; set; } = "Default Web Site";
