@@ -1,4 +1,5 @@
 ﻿using System.Security.Cryptography.X509Certificates;
+using System.Text;
 
 namespace LetsCrypt.Services.Services;
 
@@ -41,11 +42,9 @@ internal class DeploymentServiceIIS : DeploymentServiceBase
     // [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     // Install-Module –Name IISAdministration -RequiredVersion 1.1.0.0
     // Install-Module –Name IISAdministration -Force
-
     private async Task DeployCertificateAsync(DeploymentTargetIIS iis, CancellationToken cancellationToken)
     {
-        var pfx = await CopyCertificateAsync(cancellationToken);
-        if (pfx == null) return;
+        if( !await CopyCertificateAsync(cancellationToken) ) return;
 
         LoggerContext.Set("StoreName", iis.StoreName);
         LoggerContext.Set("Method", "IIS");
@@ -53,80 +52,27 @@ internal class DeploymentServiceIIS : DeploymentServiceBase
 
         await ImportCertificateAsync(iis.StoreName, cancellationToken);
 
-        var filePathLocal = GetLocalCertificatePath();
-        var certificate = new X509Certificate2(pfx, PfxPassword);
-        var thumbprint = certificate.Thumbprint;
+        var thumbprint = await GetThumbprintAsync(cancellationToken);
 
-        await RemoteAsync(async remote =>
+        var script = new StringBuilder();
+        script.AppendLine($"Set-ExecutionPolicy -ExecutionPolicy Unrestricted");
+        script.AppendLine($"Import-Module -Name 'WebAdministration'");
+
+        foreach (var binding in iis.Bindings)
         {
-            string[] result;
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Set-ExecutionPolicy")
-                .AddArgument("Unrestricted"));
+            LoggerContext.Set("Binding", binding);
+            Logger.Information("Bind certificate");
 
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Import-Module")
-                .AddArgument("WebAdministration"));
+            script.AppendLine($"Remove-IISSiteBinding -Name '{iis.Website}' -BindingInformation '{binding.Trim('?')}' -Protocol https -Confirm:$false");
+            script.Append($"New-IISSiteBinding -Name '{iis.Website}' -BindingInformation '{binding.Trim('?')}' -Protocol https -Force -CertStoreLocation 'Cert:\\LocalMachine\\{iis.StoreName}' -CertificateThumbPrint '{thumbprint}'");
+            if (binding.Split(":").Length == 3 && !string.IsNullOrEmpty(binding.Split(":")[2]) && !binding.EndsWith("?"))
+                script.Append(" -SslFlag Sni");
+            script.AppendLine();
+        }
 
-            foreach (var binding in iis.Bindings)
-            {
-                LoggerContext.Set("Binding", binding);
-                Logger.Information("Bind certificate");
+        await RunRemoteScriptAsync(script.ToString(), cancellationToken);
 
-                result = await remote.ExecuteAsync(shell => shell
-                    .AddCommand("Remove-IISSiteBinding")
-                    .AddParameter("Name", iis.Website)
-                    .AddParameter("BindingInformation", binding.Trim('?'))
-                    .AddParameter("Protocol", "https")
-                    .AddParameter("Confirm", false));
-
-                result = await remote.ExecuteAsync(shell =>
-                {
-                    shell.AddCommand("New-IISSiteBinding")
-                        .AddParameter("Name", iis.Website)
-                        .AddParameter("BindingInformation", binding.Trim('?'))
-                        .AddParameter("CertStoreLocation", $"Cert:\\LocalMachine\\{iis.StoreName}")
-                        .AddParameter("CertificateThumbPrint", certificate.Thumbprint)
-                        .AddParameter("Force")
-                        .AddParameter("Protocol", "https");
-
-                    if (binding.Split(":").Length == 3 && !string.IsNullOrEmpty(binding.Split(":")[2]) && !binding.EndsWith("?"))
-                        shell.AddParameter("SslFlag", "Sni");
-                });
-
-                if( iis.RestartService )
-                    await RestartServiceAsync("World Wide Web Publishing Service", cancellationToken);
-            }
-
-            // shell.AddScript($"Get-ChildItem -path IIS:\\SSLbindings | Where-Object {{ ($_.Port -eq {iis.Port}) -and ($_.Host -eq \"{iis.Hostname}\") -and ($_.IPAddress -match \"{iis.IpAddress}\") }} | Remove-Item");
-            // shell.AddScript($"Add-NetIPHttpsCertBinding -CertificateHash {thumbprint} ");
-            // Get-ChildItem -path IIS:\SSLbindings | Where-Object { ($_.Port -like 443) -and ($_.Host -like "mail.starsoft.nl") -and ($_.IPAddress -like "") }
-        });
-
-        //var remoteName = $"\\\\{deploy.ComputerName}\\{iis.StoreName}";
-        //UpdateCertificateStore(remoteName, StoreLocation.LocalMachine, certificate);
-
-
-        //var results = await ExecuteNetShellAsync(deploy, "netsh http show sslcert", cancellationToken);
-
-        //if (IPAddress.TryParse(iis.Hostname, out var a))
-        //{
-        //    var regex = new Regex($"\\s+IP:port\\s+:\\s{iis.Hostname}:{iis.Port}");
-        //    if (results.Any(s => regex.IsMatch(s)))
-        //    {
-        //        results = await ExecuteNetShellAsync(deploy, $"netsh http delete sslcert ipport=\"{iis.Hostname}:{iis.Port}\"", cancellationToken);
-        //    }
-        //    results = await ExecuteNetShellAsync(deploy, $"netsh http add sslcert ipport=\"{iis.Hostname}:{iis.Port}\" certhash={certificate.Thumbprint} certstorename={iis.StoreName} appid=\"{id}\"", cancellationToken);
-        //}
-        //else
-        //{
-        //    var regex = new Regex($"\\s+Hostname:port\\s+:\\s{iis.Hostname}:{iis.Port}");
-        //    if (results.Any(s => regex.IsMatch(s)))
-        //    {
-        //        results = await ExecuteNetShellAsync(deploy, $"netsh http delete sslcert hostnameport=\"{iis.Hostname}:{iis.Port}\"", cancellationToken);
-        //    }
-        //    results = await ExecuteNetShellAsync(deploy, $"netsh http add sslcert hostnameport=\"{iis.Hostname}:{iis.Port}\" certhash={certificate.Thumbprint} certstorename={iis.StoreName} appid=\"{id}\"", cancellationToken);
-        //}
+        if( iis.RestartService )
+            await RestartServiceAsync("World Wide Web Publishing Service", cancellationToken);
     }
-
 }

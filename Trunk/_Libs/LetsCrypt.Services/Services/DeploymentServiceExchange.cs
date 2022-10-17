@@ -1,5 +1,6 @@
 ﻿using System.Net;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 
 namespace LetsCrypt.Services.Services;
 
@@ -33,13 +34,16 @@ internal class DeploymentServiceExchange : DeploymentServiceBase
 
     private async Task DeployCertificateAsync(DeploymentTargetExchange exchange, CancellationToken cancellationToken)
     {
-        var pfx = await CopyCertificateAsync(cancellationToken);
-        if (pfx == null) return;
+        if (!await CopyCertificateAsync(cancellationToken))
+            return;
 
         LoggerContext.Set("StoreName", exchange.StoreName);
         LoggerContext.Set("Method", "Exchange");
 
         await ImportCertificateAsync(exchange.StoreName, cancellationToken);
+
+        var pfx = await CertificateService.LoadCertificateAsync(OrderId, cancellationToken);
+        if (pfx == null) return;
 
         var filePathLocal = GetLocalCertificatePath();
         var certificate = new X509Certificate2(pfx, PfxPassword);
@@ -47,84 +51,18 @@ internal class DeploymentServiceExchange : DeploymentServiceBase
 
         Logger.Information("Bind certificate");
 
-        await RemoteAsync(async remote =>
+        var script = new StringBuilder();
+        script.AppendLine($"Set-ExecutionPolicy -ExecutionPolicy Unrestricted");
+        if (!string.IsNullOrEmpty(Username) && !string.IsNullOrEmpty(Password))
         {
-            string[] result;
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Set-ExecutionPolicy")
-                .AddArgument("Unrestricted"));
-
-            //result = await remote.ExecuteAsync(shell => shell
-            //    .AddCommand("Add-PSSnapin")
-            //    .AddArgument("Microsoft.Exchange.Management.PowerShell.SnapIn"));
-
-            //result = await remote.ExecuteAsync(shell => shell
-            //    .AddCommand("Enable-ExchangeCertificate")
-            //    .AddParameter("Thumbprint", thumbprint)
-            //    .AddParameter("Services", "IIS"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"$password = ConvertTo-SecureString '{Password}' -AsPlainText -Force"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"$UserCredential = New-Object System.Management.Automation.PSCredential ('{Username}', $password)"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"$Session = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri http://{ComputerName}.STARSOFT.NL/PowerShell/ -Authentication Kerberos -Credential $UserCredential"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"Import-PSSession $Session -DisableNameChecking"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Enable-ExchangeCertificate")
-                .AddParameter("Thumbprint", thumbprint)
-                .AddParameter("Services", "IIS"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"iisreset"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"Remove-PSSession -computername {ComputerName}.STARSOFT.NL"));
-
-
-            // $password = ConvertTo-SecureString "{}" -AsPlainText -Force
-            // $UserCredential = New-Object System.Management.Automation.PSCredential ("STARSOFT\Administrator", $password)
-            // $Session = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri http://EX1.STARSOFT.NL/PowerShell/ -Authentication Kerberos -Credential $UserCredential
-            // Import-PSSession $Session -DisableNameChecking
-            // iisreset
-            // Remove-PSSession -computername EX1.STARSOFT.NL
-
-            // Enable-ExchangeCertificate -Thumbprint F7806AAD453C947BDBBBE1A98100102BAD62CA3F -Services IIS
-
-            // Import-ExchangeCertificate -FileName "<FilePathOrUNCPath>\<FileName>" -Password (ConvertTo-SecureString -String '<Password> ' -AsPlainText -Force) [-PrivateKeyExportable <$true | $false>] [-Server <ServerIdentity>]
-            //binding = "0.0.0.0:8172"
-            //LoggerContext.Set("Binding", binding);
-            //Logger.Information("Bind certificate");
-
-            //    result = await remote.ExecuteAsync(shell =>
-            //    {
-            //        if (IPAddress.TryParse(binding.Split(":")[0], out var address))
-            //            shell.AddScript($"netsh http delete sslcert ipport='{binding}'");
-            //        else shell.AddScript($"netsh http delete sslcert hostnameport='{binding}'");
-            //    });
-
-            //    result = await remote.ExecuteAsync(shell =>
-            //    {
-            //        if (IPAddress.TryParse(binding.Split(":")[0], out var address))
-            //            shell.AddScript($"netsh http add sslcert ipport='{binding}' certhash={thumbprint} certstorename={http.StoreName} appid='{id}'");
-            //        else shell.AddScript($"netsh http add sslcert hostnameport='{binding}' certhash={thumbprint} certstorename={http.StoreName} appid='{id}'");
-            //    });
-
-
-            //result = await remote.ExecuteAsync(shell =>
-            //{
-            //    shell.AddCommand("Add-NetIPHttpsCertBinding")
-            //        .AddParameter("IpPort", binding)
-            //        .AddParameter("CertificateStoreName", $"Cert:\\LocalMachine\\{http.StoreName}")
-            //        .AddParameter("CertificateHash ", certificate.Thumbprint)
-            //        .AddParameter("ApplicationId", id);
-            //});
-            // }
-        });
+            script.AppendLine($"$password = ConvertTo-SecureString '{Password}' -AsPlainText -Force");
+            script.AppendLine($"$UserCredential = New-Object System.Management.Automation.PSCredential ('{Username}', $password)");
+            script.AppendLine($"$Session = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri http://{ComputerName}.STARSOFT.NL/PowerShell/ -Authentication Kerberos -Credential $UserCredential");
+        } else script.AppendLine($"$Session = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri http://{ComputerName}.STARSOFT.NL/PowerShell/ -Authentication Negotiate");
+        script.AppendLine($"Import-PSSession $Session -DisableNameChecking");
+        script.AppendLine($"Enable-ExchangeCertificate -Thumbprint '{thumbprint}' -Services 'IIS'");
+        script.AppendLine($"iisreset");
+        script.AppendLine($"Remove-PSSession -computername {ComputerName}.STARSOFT.NL");
+        await RunRemoteScriptAsync(script.ToString(), cancellationToken);
     }
 }

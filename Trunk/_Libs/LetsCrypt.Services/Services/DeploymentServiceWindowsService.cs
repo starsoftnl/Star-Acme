@@ -40,18 +40,13 @@ internal class DeploymentServiceWindowsService : DeploymentServiceBase
 
     private async Task DeployCertificateAsync(DeploymentTargetWindowsService ws, CancellationToken cancellationToken)
     {
-        var pfx = await CopyCertificateAsync(cancellationToken);
-        if (pfx == null) return;
+        if (!await CopyCertificateAsync(cancellationToken)) return;
 
         LoggerContext.Set("StoreName", ws.StoreName);
         LoggerContext.Set("Method", "Windows Service");
         LoggerContext.Set("Display Name", ws.ServiceDisplayName);
 
         await ImportCertificateAsync(ws.StoreName, cancellationToken);
-
-        var filePathLocal = GetLocalCertificatePath();
-        var certificate = new X509Certificate2(pfx, PfxPassword);
-        var thumbprint = certificate.Thumbprint;
 
         Logger.Information("Restart Service");
 

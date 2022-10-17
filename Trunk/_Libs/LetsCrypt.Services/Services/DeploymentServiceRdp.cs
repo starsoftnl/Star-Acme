@@ -32,24 +32,31 @@ internal class DeploymentServiceRdp : DeploymentServiceBase
 
     private async Task DeployCertificateAsync(DeploymentTargetRdp rdp, CancellationToken cancellationToken)
     {
-        var pfx = await CopyCertificateAsync(cancellationToken);
-        if (pfx == null) return;
+        if( !await CopyCertificateAsync(cancellationToken) ) return;
 
         LoggerContext.Set("StoreName", rdp.StoreName);
         LoggerContext.Set("Method", "Rdp");
 
         await ImportCertificateAsync(rdp.StoreName, cancellationToken);
 
-        var filePathLocal = GetLocalCertificatePath();
-        var certificate = new X509Certificate2(pfx, PfxPassword);
-        var thumbprint = certificate.Thumbprint;
+        var thumbprint = await GetThumbprintAsync(cancellationToken);
 
         Logger.Information("Bind certificate");
 
-        await AddAccessRightsToCertificateAsync( rdp.StoreName, thumbprint, "NETWORK SERVICE", cancellationToken);
+        await AddAccessRightsToCertificateAsync( 
+            rdp.StoreName, 
+            thumbprint, 
+            "NETWORK SERVICE", 
+            cancellationToken);
 
-        await SetRegistryKeyAsync("HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp", "SSLCertificateSHA1Hash", thumbprint);
+        await SetRegistryKeyAsync(
+            "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp", 
+            "SSLCertificateSHA1Hash", 
+            thumbprint, 
+            cancellationToken);
 
-        await RestartServiceAsync("Remote Desktop Services", cancellationToken);
+        await RestartServiceAsync(
+            "Remote Desktop Services", 
+            cancellationToken);
     }
 }

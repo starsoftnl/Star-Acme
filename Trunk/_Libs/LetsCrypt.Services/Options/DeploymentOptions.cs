@@ -10,7 +10,7 @@ internal class DeploymentOptions
 
     public string? Password { get; set; }
 
-    public string UncPath { get; set; } = "\\\\{ComputerName}\\C$\\admin\\Certificate";
+    // public string UncPath { get; set; } = "\\\\{ComputerName}\\C$\\admin\\Certificate";
 
     public string LocalPath { get; set; } = "c:\\admin\\Certificate";
 

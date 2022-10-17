@@ -33,17 +33,14 @@ internal class DeploymentServiceWac : DeploymentServiceBase
 
     private async Task DeployCertificateAsync(DeploymentTargetWac wac, CancellationToken cancellationToken)
     {
-        var pfx = await CopyCertificateAsync(cancellationToken);
-        if (pfx == null) return;
+        if (!await CopyCertificateAsync(cancellationToken)) return;
 
         LoggerContext.Set("StoreName", wac.StoreName);
         LoggerContext.Set("Method", "WAC");
 
         await ImportCertificateAsync(wac.StoreName, cancellationToken);
 
-        var filePathLocal = GetLocalCertificatePath();
-        var certificate = new X509Certificate2(pfx, PfxPassword);
-        var thumbprint = certificate.Thumbprint;
+        var thumbprint = await GetThumbprintAsync(cancellationToken);
 
         Logger.Information("Bind certificate");
 
@@ -73,30 +70,6 @@ internal class DeploymentServiceWac : DeploymentServiceBase
             result = await remote.ExecuteAsync(shell => shell
                 .AddCommand("Start-Service")
                 .AddArgument("ServerManagementGateway"));
-
-
-            //result = await remote.ExecuteAsync(shell => shell
-            //    .AddScript("$wac = get-wmiobject Win32_Product | select IdentifyingNumber, Name, LocalPackage | Where Name -eq 'Windows Admin Center'"));
-
-            //var items = new List<string>();
-            //items.Add($"/i $($wac.LocalPackage)");
-            //items.Add($"/qn");
-            //items.Add($"/L*v c:\\Admin\\wac-install-log.txt");
-            //items.Add($"SME_PORT=443");
-            //items.Add($"SME_THUMBPRINT={thumbprint}");
-            //items.Add($"SSL_CERTIFICATE_OPTION=installed");
-            //var args = string.Join(" ", items);
-
-            //result = await remote.ExecuteAsync(shell => shell
-            //    .AddCommand("Start-Process")
-            //    .AddArgument("msiexec.exe")
-            //    .AddParameter("Wait")
-            //    .AddParameter("ArgumentList", args)
-            //    );
-
-            //result = await remote.ExecuteAsync(shell => shell
-            //    .AddCommand("Start-Service")
-            //    .AddArgument("ServerManagementGateway"));
         });
     }
 }

@@ -33,8 +33,8 @@ internal class DeploymentServiceOctopus : DeploymentServiceBase
 
     private async Task DeployCertificateAsync(DeploymentTargetOctopus octopus, CancellationToken cancellationToken)
     {
-        var pfx = await CopyCertificateAsync(cancellationToken);
-        if (pfx == null) return;
+        if (!await CopyCertificateAsync(cancellationToken)) 
+            return;
 
         LoggerContext.Set("StoreName", octopus.StoreName);
         LoggerContext.Set("Method", "Octopus");
@@ -42,8 +42,7 @@ internal class DeploymentServiceOctopus : DeploymentServiceBase
         await ImportCertificateAsync(octopus.StoreName, cancellationToken);
 
         var filePathLocal = GetLocalCertificatePath();
-        var certificate = new X509Certificate2(pfx, PfxPassword);
-        var thumbprint = certificate.Thumbprint;
+        var thumbprint = await GetThumbprintAsync(cancellationToken);
         var octopusPath = octopus.OctopusPath ?? @"C:\Program Files\Octopus Deploy\Octopus";
 
         LoggerContext.Set("IPAddress", octopus.IpAddress);

@@ -35,7 +35,11 @@ internal class DeploymentService
             await RunDeploymentAsync(deployment.Key, deployment.Value, cancellationToken);
 
         var next = DeploymentDateTime.Values.Where(d => d != null).ToList();
-        return next.Count == 0 ? null : next.Min();
+        var delay =  next.Count == 0 ? null : next.Min();
+
+        Logger.Information($"Deployment completed. Next run at {delay:dd-MM-yyyy HH:mm:ss}");
+
+        return delay;
     }
 
     private async Task RunDeploymentAsync(string name, DeploymentOptions deployment, CancellationToken cancellationToken)
@@ -52,7 +56,8 @@ internal class DeploymentService
 
         try
         {
-            if (DeploymentDateTime.TryGetValue(key, out var nextrun) && nextrun != null && nextrun.Value > Now) return;
+            if (DeploymentDateTime.TryGetValue(key, out var nextrun) )
+                if(nextrun == null || nextrun.Value > Now) return;
             DeploymentDateTime[key] = null;
 
             LoggerContext.Set("ComputerName", computer);
@@ -70,7 +75,7 @@ internal class DeploymentService
                     var next = await service.RunAsync(Now, deployment, computer, target, phase, cancellationToken);
 
                     if (next != null)
-                        if (DeploymentDateTime[key] == null || next.Value < DeploymentDateTime[key]!.Value)
+                       if (DeploymentDateTime[key] == null || next.Value < DeploymentDateTime[key]!.Value)
                             DeploymentDateTime[key] = next;
                 }
             }

@@ -33,17 +33,14 @@ internal class DeploymentServiceWMSVC : DeploymentServiceBase
 
     private async Task DeployCertificateAsync(DeploymentTargetWMSVC wmsvc, CancellationToken cancellationToken)
     {
-        var pfx = await CopyCertificateAsync(cancellationToken);
-        if (pfx == null) return;
+        if( !await CopyCertificateAsync(cancellationToken) ) return;
 
         LoggerContext.Set("StoreName", wmsvc.StoreName);
         LoggerContext.Set("Method", "WMSVC");
 
         await ImportCertificateAsync(wmsvc.StoreName, cancellationToken);
 
-        var filePathLocal = GetLocalCertificatePath();
-        var certificate = new X509Certificate2(pfx, PfxPassword);
-        var thumbprint = certificate.Thumbprint;
+        var thumbprint = await GetThumbprintAsync(cancellationToken);
 
         Logger.Information("Bind certificate");
 
@@ -58,7 +55,7 @@ internal class DeploymentServiceWMSVC : DeploymentServiceBase
                 .AddCommand("Stop-Service")
                 .AddArgument("WMSVC"));
 
-            var binary = string.Join(",", Enumerable.Range(0, certificate.Thumbprint.Length / 2).Select(i => $"0x{certificate.Thumbprint.Substring(i * 2, 2)}"));
+            var binary = string.Join(",", Enumerable.Range(0, thumbprint.Length / 2).Select(i => $"0x{thumbprint.Substring(i * 2, 2)}"));
 
             result = await remote.ExecuteAsync(shell => shell
                 .AddScript($"Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\WebManagement\\Server' -Name 'SslCertificateHash' -Value ([byte[]]({binary}))"));

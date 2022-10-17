@@ -3,6 +3,7 @@ using ACMESharp.Protocol;
 using ACMESharp.Protocol.Resources;
 using DnsClient;
 using Newtonsoft.Json;
+using Org.BouncyCastle.Asn1.Pkcs;
 using PKISharp.SimplePKI;
 using System.Security.Cryptography.X509Certificates;
 
@@ -37,6 +38,9 @@ internal class CertificateService
         DnsHostingService = dnsHostingService;
     }
 
+    public string CertificatePath
+        => PlatformOptions.CurrentValue.SharedDataPath!;
+
     public async Task<bool> UpdateOrCreateCertificate(string id, CertificateOptions order, CancellationToken cancellationToken)
     {
         using var http = CreateHttpClient(cancellationToken);
@@ -67,7 +71,7 @@ internal class CertificateService
         if (details.Payload.Status == InvalidStatus)
         {
             Logger.Warning($"Order has state invalid. Order deleted");
-            var path = Path.Combine(PlatformOptions.CurrentValue.SharedDataPath, $"Order {id}.json");
+            var path = Path.Combine(CertificatePath, $"Order {id}.json");
             File.Delete(path);
             return false;
         }
@@ -189,7 +193,6 @@ internal class CertificateService
         using var acme = await CreateAcmeClientAndAccount(http, cancellationToken);
     }
 
-
     private PkiKeyPair CreateKeyPair(CertificateOptions order)
     {
         switch (order.KeyAlgorithm)
@@ -262,7 +265,7 @@ internal class CertificateService
 
     private async Task<ServiceDirectory?> LoadServiceDirectoryAsync(CancellationToken cancellationToken)
     {
-        var path = Path.Combine(PlatformOptions.CurrentValue.SharedDataPath, "ServiceDirectory.json");
+        var path = Path.Combine(CertificatePath, "ServiceDirectory.json");
         if (!File.Exists(path)) return null;
 
         var text = await File.ReadAllTextAsync(path, cancellationToken);
@@ -272,7 +275,7 @@ internal class CertificateService
 
     private async Task<AccountDetails?> LoadAccountDetailsAsync(CancellationToken cancellationToken)
     {
-        var path = Path.Combine(PlatformOptions.CurrentValue.SharedDataPath, "AccountDetails.json");
+        var path = Path.Combine(CertificatePath, "AccountDetails.json");
         if (!File.Exists(path)) return null;
 
         var text = await File.ReadAllTextAsync(path, cancellationToken);
@@ -282,7 +285,7 @@ internal class CertificateService
 
     private async Task<AccountKey?> LoadAccountKeyAsync(CancellationToken cancellationToken)
     {
-        var path = Path.Combine(PlatformOptions.CurrentValue.SharedDataPath, "AccountKey.json");
+        var path = Path.Combine(CertificatePath, "AccountKey.json");
         if (!File.Exists(path)) return null;
 
         var text = await File.ReadAllTextAsync(path, cancellationToken);
@@ -292,7 +295,7 @@ internal class CertificateService
 
     private async Task<OrderDetails?> LoadOrderDetailsAsync(string id, CancellationToken cancellationToken)
     {
-        var path = Path.Combine(PlatformOptions.CurrentValue.SharedDataPath, $"Order {id}.json");
+        var path = Path.Combine(CertificatePath, $"Order {id}.json");
         if (!File.Exists(path)) return null;
 
         var text = await File.ReadAllTextAsync(path, cancellationToken);
@@ -302,7 +305,7 @@ internal class CertificateService
 
     private async Task<PkiKeyPair?> LoadOrderKeyAsync(string id, CancellationToken cancellationToken)
     {
-        var path = Path.Combine(PlatformOptions.CurrentValue.SharedDataPath, $"OrderKey {id}.xml");
+        var path = Path.Combine(CertificatePath, $"OrderKey {id}.xml");
         if (!File.Exists(path)) return null;
 
         var bytes = await File.ReadAllBytesAsync(path, cancellationToken);
@@ -315,9 +318,9 @@ internal class CertificateService
     private async Task SaveServiceDirectoryAsync(ServiceDirectory directory, CancellationToken cancellationToken)
     {
         if (!Directory.Exists(PlatformOptions.CurrentValue.SharedDataPath))
-            Directory.CreateDirectory(PlatformOptions.CurrentValue.SharedDataPath);
+            Directory.CreateDirectory(CertificatePath);
 
-        var path = Path.Combine(PlatformOptions.CurrentValue.SharedDataPath, "ServiceDirectory.json");
+        var path = Path.Combine(CertificatePath, "ServiceDirectory.json");
 
         var text = JsonConvert.SerializeObject( directory, Formatting.Indented );
         
@@ -327,9 +330,9 @@ internal class CertificateService
     private async Task SaveAccountDetailsAsync(AccountDetails details, CancellationToken cancellationToken)
     {
         if (!Directory.Exists(PlatformOptions.CurrentValue.SharedDataPath))
-            Directory.CreateDirectory(PlatformOptions.CurrentValue.SharedDataPath);
+            Directory.CreateDirectory(CertificatePath);
 
-        var path = Path.Combine(PlatformOptions.CurrentValue.SharedDataPath, "AccountDetails.json");
+        var path = Path.Combine(CertificatePath, "AccountDetails.json");
 
         var text = JsonConvert.SerializeObject(details, Formatting.Indented);
 
@@ -339,9 +342,9 @@ internal class CertificateService
     private async Task SaveAccountKeyAsync(AccountKey key, CancellationToken cancellationToken)
     {
         if (!Directory.Exists(PlatformOptions.CurrentValue.SharedDataPath))
-            Directory.CreateDirectory(PlatformOptions.CurrentValue.SharedDataPath);
+            Directory.CreateDirectory(CertificatePath);
 
-        var path = Path.Combine(PlatformOptions.CurrentValue.SharedDataPath, "AccountKey.json");
+        var path = Path.Combine(CertificatePath, "AccountKey.json");
 
         var text = JsonConvert.SerializeObject(key, Formatting.Indented);
 
@@ -351,9 +354,9 @@ internal class CertificateService
     private async Task SaveOrderDetailsAsync(string id, OrderDetails details, CancellationToken cancellationToken)
     {
         if (!Directory.Exists(PlatformOptions.CurrentValue.SharedDataPath))
-            Directory.CreateDirectory(PlatformOptions.CurrentValue.SharedDataPath);
+            Directory.CreateDirectory(CertificatePath);
 
-        var path = Path.Combine(PlatformOptions.CurrentValue.SharedDataPath, $"Order {id}.json");
+        var path = Path.Combine(CertificatePath, $"Order {id}.json");
 
         var text = JsonConvert.SerializeObject(details, Formatting.Indented);
 
@@ -363,9 +366,9 @@ internal class CertificateService
     private async Task SaveOrderKeyAsync(string id, PkiKeyPair key, CancellationToken cancellationToken)
     {
         if (!Directory.Exists(PlatformOptions.CurrentValue.SharedDataPath))
-            Directory.CreateDirectory(PlatformOptions.CurrentValue.SharedDataPath);
+            Directory.CreateDirectory(CertificatePath);
 
-        var path = Path.Combine(PlatformOptions.CurrentValue.SharedDataPath, $"OrderKey {id}.xml");
+        var path = Path.Combine(CertificatePath, $"OrderKey {id}.xml");
 
         using var stream = new MemoryStream();
         key.Save(stream);
@@ -376,16 +379,16 @@ internal class CertificateService
     private async Task SaveCertificateAsync(string id, byte[] data, CancellationToken cancellationToken)
     {
         if (!Directory.Exists(PlatformOptions.CurrentValue.SharedDataPath))
-            Directory.CreateDirectory(PlatformOptions.CurrentValue.SharedDataPath);
+            Directory.CreateDirectory(CertificatePath);
 
-        var path = Path.Combine(PlatformOptions.CurrentValue.SharedDataPath, $"{id}.pfx");
+        var path = Path.Combine(CertificatePath, $"{id}.pfx");
 
         await File.WriteAllBytesAsync(path, data, cancellationToken);
     }
 
     public async Task<byte[]?> LoadCertificateAsync(string id, CancellationToken cancellationToken)
     {
-        var path = Path.Combine(PlatformOptions.CurrentValue.SharedDataPath, $"{id}.pfx");
+        var path = Path.Combine(CertificatePath, $"{id}.pfx");
         if (!File.Exists(path)) return null;
 
         return await File.ReadAllBytesAsync(path, cancellationToken);
@@ -393,7 +396,7 @@ internal class CertificateService
 
     public void DeleteOrder(string id)
     {
-        var path = Path.Combine(PlatformOptions.CurrentValue.SharedDataPath, $"Order {id}.json");
+        var path = Path.Combine(CertificatePath, $"Order {id}.json");
         if (!File.Exists(path)) return;
 
         File.Delete(path);
@@ -401,7 +404,7 @@ internal class CertificateService
 
     public void DeleteCertificate(string id)
     {
-        var path = Path.Combine(PlatformOptions.CurrentValue.SharedDataPath, $"{id}.pfx");
+        var path = Path.Combine(CertificatePath, $"{id}.pfx");
         if (!File.Exists(path)) return;
 
         File.Delete(path);

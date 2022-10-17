@@ -32,17 +32,14 @@ internal class DeploymentServiceSqlServer : DeploymentServiceBase
 
     private async Task DeployCertificateAsync(DeploymentTargetSqlServer sql, CancellationToken cancellationToken)
     {
-        var pfx = await CopyCertificateAsync(cancellationToken);
-        if (pfx == null) return;
+        if (!await CopyCertificateAsync(cancellationToken)) return;
 
         LoggerContext.Set("StoreName", sql.StoreName);
         LoggerContext.Set("Method", "SqlServer");
 
         await ImportCertificateAsync(sql.StoreName, cancellationToken);
 
-        var filePathLocal = GetLocalCertificatePath();
-        var certificate = new X509Certificate2(pfx, PfxPassword);
-        var thumbprint = certificate.Thumbprint;
+        var thumbprint = await GetThumbprintAsync(cancellationToken);
 
         Logger.Information("Bind certificate");
 
@@ -50,6 +47,11 @@ internal class DeploymentServiceSqlServer : DeploymentServiceBase
         
         // Computer\HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL15.MSSQLSERVER\MSSQLServer\SuperSocketNetLib
         var instance = $"{sql.InstanceName ?? "MSSQLServer"}";
-        await SetRegistryKeyAsync($"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Microsoft SQL Server\\MSSQL15.{instance}\\{instance}\\SuperSocketNetLib", "Certificate", thumbprint);
+
+        await SetRegistryKeyAsync(
+            $"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Microsoft SQL Server\\MSSQL15.{instance}\\{instance}\\SuperSocketNetLib", 
+            "Certificate", 
+            thumbprint,
+            cancellationToken);
     }
 }

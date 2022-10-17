@@ -17,6 +17,7 @@
     <PackageReference Include="ACMESharpCore" Version="2.2.0.148" />
     <PackageReference Include="DnsClient" Version="1.6.1" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="6.0.0" />
+    <PackageReference Include="Microsoft.PowerShell.SDK" Version="7.2.6" />
     <PackageReference Include="PKISharp.SimplePKI" Version="2.0.1.148" />
     <PackageReference Include="Platform.DependencyInjection" Version="5.2.170" />
     <PackageReference Include="Platform.Hosting" Version="5.2.170" />

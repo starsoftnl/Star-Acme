@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using Org.BouncyCastle.Asn1.Pkcs;
+using System.Net;
 using System.Security.Cryptography.X509Certificates;
 
 namespace LetsCrypt.Services.Services;
@@ -40,17 +41,15 @@ internal class DeploymentServiceHttpSys : DeploymentServiceBase
 
     private async Task DeployCertificateAsync(DeploymentTargetHttpSys http, CancellationToken cancellationToken)
     {
-        var pfx = await CopyCertificateAsync(cancellationToken);
-        if (pfx == null) return;
+        if (!await CopyCertificateAsync(cancellationToken))
+            return;
 
         LoggerContext.Set("StoreName", http.StoreName);
         LoggerContext.Set("Method", "HttpSys");
 
         await ImportCertificateAsync(http.StoreName, cancellationToken);
 
-        var filePathLocal = GetLocalCertificatePath();
-        var certificate = new X509Certificate2(pfx, PfxPassword);
-        var thumbprint = certificate.Thumbprint;
+        var thumbprint = await GetThumbprintAsync(cancellationToken);
 
         await RemoteAsync(async remote =>
         {

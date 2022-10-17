@@ -1,4 +1,9 @@
-﻿namespace LetsCrypt.Services.Services;
+﻿using System.IO;
+using System.Security;
+using System.Text;
+using System.Threading;
+
+namespace LetsCrypt.Services.Services;
 
 [Singleton(typeof(IDeploymentService))]
 internal abstract class DeploymentServiceBase : IDeploymentService
@@ -37,7 +42,6 @@ internal abstract class DeploymentServiceBase : IDeploymentService
         ComputerName = computerName;
         Username = Target.Username ?? Deploy.Username;
         Password = Target.Password ?? Deploy.Password;
-        UncPath = (Target.UncPath ?? Deploy.UncPath ?? "\\\\{ComputerName}\\C$\\admin\\Certificate").Replace("{ComputerName}", ComputerName);
         LocalPath = (Target.LocalPath ?? Deploy.LocalPath ?? "c:\\admin\\Certificate").Replace("{ComputerName}", ComputerName);
 
         OrderId = Target.Certificate ?? deployment.Certificate;
@@ -73,14 +77,14 @@ internal abstract class DeploymentServiceBase : IDeploymentService
     protected string ComputerName { get; set; } = default!;
     protected string? Username { get; set; }
     protected string? Password { get; set; }
-    protected string? UncPath { get; set; }
+    // protected string? UncPath { get; set; }
     protected string? LocalPath { get; set; }
 
     protected string GetLocalCertificatePath()
         => Path.Join(LocalPath, $"{OrderId}.pfx");
 
-    protected string GetNetworkCertificatePath()
-        => Path.Join(UncPath, $"{OrderId}.pfx");
+    //protected string GetNetworkCertificatePath()
+    //    => Path.Join(UncPath, $"{OrderId}.pfx");
 
     protected async Task<DateTimeOffset?> UpdateCertificateAsync(CancellationToken cancellationToken)
     {
@@ -148,77 +152,72 @@ internal abstract class DeploymentServiceBase : IDeploymentService
         }
     }
 
-    protected async Task<byte[]?> CopyCertificateAsync(CancellationToken cancellationToken)
+    //protected async Task<byte[]?> CopyCertificateAsync(CancellationToken cancellationToken)
+    //{
+    //    var pfx = await CertificateService.LoadCertificateAsync(OrderId, cancellationToken);
+    //    if (pfx == null) return null;
+
+    //    var filePathUnc = GetNetworkCertificatePath();
+    //    var directoryUnc = Path.GetDirectoryName(filePathUnc);
+
+    //    if (directoryUnc != null && !Directory.Exists(directoryUnc))
+    //        Directory.CreateDirectory(directoryUnc);
+
+    //    await File.WriteAllBytesAsync(filePathUnc, pfx, cancellationToken);
+
+    //    return pfx;
+    //}
+
+    protected async Task<bool> CopyCertificateAsync(CancellationToken cancellationToken)
     {
-        var pfx = await CertificateService.LoadCertificateAsync(OrderId, cancellationToken);
-        if (pfx == null) return null;
+        var sourcepath = Path.Join(CertificateService.CertificatePath, $"{OrderId}.pfx");
+        if (!File.Exists(sourcepath)) return false;
 
-        var filePathUnc = GetNetworkCertificatePath();
-        var directoryUnc = Path.GetDirectoryName(filePathUnc);
+        var targetpath = GetLocalCertificatePath();
 
-        if (directoryUnc != null && !Directory.Exists(directoryUnc))
-            Directory.CreateDirectory(directoryUnc);
+        var script = new StringBuilder();
+        if (!string.IsNullOrEmpty(Username))
+        {
+            script.AppendLine($"$pw = convertto-securestring -AsPlainText -Force -String '{Password}'");
+            script.AppendLine($"$cred = new-object -typename System.Management.Automation.PSCredential -argumentlist '{Username}',$pw");
+            script.AppendLine($"$session = New-PSSession -ComputerName {ComputerName} -Credential $cred");
+        } else script.AppendLine($"$session = New-PSSession -ComputerName {ComputerName}");
+        script.AppendLine( $"Copy-Item -Path '{sourcepath}' -Destination '{LocalPath}' -ToSession $session");
+        script.AppendLine($"Remove-PSSession -Session $session");
 
-        await File.WriteAllBytesAsync(filePathUnc, pfx, cancellationToken);
+        await RunLocalScriptAsync(script.ToString(), cancellationToken);
 
-        return pfx;
+        return true;
     }
 
-    protected async Task SetRegistryKeyAsync( string path, string name, string value )
+    protected async Task SetRegistryKeyAsync( string path, string name, string value, CancellationToken cancellationToken )
     {
-        await RemoteAsync(async remote =>
-        {
-            string[] result;
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"$path = 'Registry::{path}'"));
+        var script = new StringBuilder();
+        script.AppendLine($"$path = 'Registry::{path}'");
+        script.AppendLine($"$name = '{name}'");
+        script.AppendLine($"$value = '{value}'");
+        script.AppendLine($"If( -not (Test-Path $path) ) {{ New-Item -Path $path -Force | Out-Null }}");
+        script.AppendLine($"New-ItemProperty -Path $path -Name $name -Value $value -Force");
 
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"$name = '{name}'"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"$value = '{value}'"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"If( -not (Test-Path $path) ) {{ New-Item -Path $path -Force | Out-Null }}"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"New-ItemProperty -Path $path -Name $name -Value $value -Force"));
-        });
+        await RunRemoteScriptAsync(script.ToString(), cancellationToken);
     }
 
     protected async Task AddAccessRightsToCertificateAsync( string storeName, string thumbprint, string username, CancellationToken cancellationToken )
-    {       
-        await RemoteAsync(async remote =>
-        {
-            string[] result;
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Set-ExecutionPolicy")
-                .AddArgument("Unrestricted"));
+    {
+        var script = new StringBuilder();
+        script.AppendLine($"Set-ExecutionPolicy -ExecutionPolicy Unrestricted");
+        script.AppendLine(
+            $"$certs = Get-ChildItem 'Cert:\\LocalMachine\\{storeName}' | " +
+            $"Where-Object {{ $_.Thumbprint -eq '{thumbprint}' }} | " +
+            $"Select-Object -first 1");
+        script.AppendLine($"$key = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($certs[0])");
+        script.AppendLine($"$rule = New-Object System.Security.AccessControl.FileSystemAccessRule '{username}', Read, Allow");
+        script.AppendLine($"$filepath = [io.path]::combine($env:ALLUSERSPROFILE, 'Microsoft\\Crypto\\Keys', $key.key.UniqueName)");
+        script.AppendLine($"$acl = Get-Acl -path $filepath");
+        script.AppendLine($"$acl.AddAccessRule($rule)");
+        script.AppendLine($"Set-Acl $filepath $acl");
 
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript(
-                    $"$certs = Get-ChildItem 'Cert:\\LocalMachine\\{storeName}' | " +
-                    $"Where-Object {{ $_.Thumbprint -eq '{thumbprint}' }} | " +
-                    $"Select-Object -first 1"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"$key = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($certs[0])"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"$rule = New-Object System.Security.AccessControl.FileSystemAccessRule '{username}', Read, Allow"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"$filepath = [io.path]::combine($env:ALLUSERSPROFILE, 'Microsoft\\Crypto\\Keys', $key.key.UniqueName)"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"$acl = Get-Acl -path $filepath"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"$acl.AddAccessRule($rule)"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"Set-Acl $filepath $acl"));
-        });
+        await RunRemoteScriptAsync(script.ToString(), cancellationToken);
     }
 
     protected async Task ChangePasswordCertificateAsync(string password, CancellationToken cancellationToken)
@@ -226,72 +225,40 @@ internal abstract class DeploymentServiceBase : IDeploymentService
         var filePathLocal = GetLocalCertificatePath();
         var filePathTemp = Path.Combine(Path.GetDirectoryName(filePathLocal)!, "temp.pfx");
 
-        await RemoteAsync(async remote =>
-        {
-            string[] result;
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Set-ExecutionPolicy")
-                .AddArgument("Unrestricted"));
+        var script = new StringBuilder();
+        script.AppendLine($"Set-ExecutionPolicy -ExecutionPolicy Unrestricted");
+        script.AppendLine($"$newpassword = ConvertTo-SecureString -String '{password}' -Force -AsPlainText");
+        script.AppendLine($"$oldpassword = ConvertTo-SecureString -String '{PfxPassword}' -Force -AsPlainText");
+        script.AppendLine($"$pfx = Get-PfxData -FilePath '{filePathLocal}' -Password $oldpassword");
+        script.AppendLine($"Export-PfxCertificate -PFXData $pfx -FilePath {filePathTemp} -Password $newpassword");
+        script.AppendLine($"Remove-Item -Path '{filePathLocal}' -Force");
+        script.AppendLine($"Rename-Item -Path '{filePathTemp}' -NewName '{filePathLocal}' -Force");
 
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"$newpassword = ConvertTo-SecureString -String '{password}' -Force -AsPlainText"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"$oldpassword = ConvertTo-SecureString -String '{PfxPassword}' -Force -AsPlainText"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"$pfx = Get-PfxData -FilePath '{filePathLocal}' -Password $oldpassword"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"Export-PfxCertificate -PFXData $pfx -FilePath {filePathTemp} -Password $newpassword"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Remove-Item")
-                .AddParameter("Path", filePathLocal)
-                .AddParameter("Force"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Rename-Item")
-                .AddParameter("Path", filePathTemp)
-                .AddParameter("NewName", filePathLocal)
-                .AddParameter("Force"));
-        });
+        await RunRemoteScriptAsync(script.ToString(), cancellationToken);
     }
 
     protected async Task ImportCertificateAsync(string storeName, CancellationToken cancellationToken)
     {
-        var pfx = await CertificateService.LoadCertificateAsync(OrderId, cancellationToken);
-        if (pfx == null) return;
-
-        var certificate = new X509Certificate2(pfx, PfxPassword);
-        var thumbprint = certificate.Thumbprint;
+        var thumbprint = await GetThumbprintAsync(cancellationToken);
 
         var filePathLocal = GetLocalCertificatePath();
 
-        await RemoteAsync(async remote =>
+        var script = new StringBuilder();
+        script.AppendLine($"Set-ExecutionPolicy -ExecutionPolicy Unrestricted");
+        script.AppendLine($"Get-ChildItem 'cert:\\LocalMachine\\{storeName}' | Where-Object {{ $_.Subject -eq 'CN={DnsNames.First()}' -and $_.Thumbprint -ne '{thumbprint}' }} | Remove-Item");
+        script.AppendLine($"Get-ChildItem 'cert:\\LocalMachine\\{storeName}' | Where-Object {{ $_.Subject -eq 'CN={DnsNames.First()}' -and $_.Thumbprint -eq '{thumbprint}' }}");
+        var results = await RunRemoteScriptAsync(script.ToString(), cancellationToken);
+
+        if (!results.Any(r => r.Contains(thumbprint)))
         {
-            string[] result;
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Set-ExecutionPolicy")
-                .AddArgument("Unrestricted"));
+            Logger.Information("Import certificate into remote store");
 
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"Get-ChildItem 'cert:\\LocalMachine\\{storeName}' | Where-Object {{ $_.Subject -eq 'CN={DnsNames.First()}' -and $_.Thumbprint -ne '{thumbprint}' }} | Remove-Item"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"Get-ChildItem 'cert:\\LocalMachine\\{storeName}' | Where-Object {{ $_.Subject -eq 'CN={DnsNames.First()}' -and $_.Thumbprint -eq '{thumbprint}' }}"));
-
-            if (!result.Any(r => r.Contains(thumbprint)))
-            {
-                Logger.Information("Import certificate into remote store");
-
-                result = await remote.ExecuteAsync(shell => shell
-                    .AddScript($"$certImportPwd = ConvertTo-SecureString -String '{PfxPassword}' -AsPlainText -Force"));
-
-                result = await remote.ExecuteAsync(shell => shell
-                    .AddScript($"Import-PfxCertificate -FilePath \"{filePathLocal}\" -CertStoreLocation \"cert:\\LocalMachine\\{storeName}\" -Password $certImportPwd -Exportable"));
-            }
-        });
+            script = new StringBuilder();
+            script.AppendLine($"Set-ExecutionPolicy -ExecutionPolicy Unrestricted");
+            script.AppendLine($"$certImportPwd = ConvertTo-SecureString -String '{PfxPassword}' -AsPlainText -Force");
+            script.AppendLine($"Import-PfxCertificate -FilePath \"{filePathLocal}\" -CertStoreLocation \"cert:\\LocalMachine\\{storeName}\" -Password $certImportPwd -Exportable");
+            await RunRemoteScriptAsync(script.ToString(), cancellationToken);
+        }
     }
 
     protected async Task ExportCertificateAsync(string storeName, string password, bool chain, CancellationToken cancellationToken)
@@ -305,31 +272,71 @@ internal abstract class DeploymentServiceBase : IDeploymentService
         var filePathLocal = GetLocalCertificatePath();
         var chainOption = chain ? "BuildChain" : "EndEntityCertOnly";
 
-        await RemoteAsync(async remote =>
-        {
-            string[] result;
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Set-ExecutionPolicy")
-                .AddArgument("Unrestricted"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"$newpassword = ConvertTo-SecureString -String '{password}' -Force -AsPlainText"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"$oldpassword = ConvertTo-SecureString -String '{PfxPassword}' -Force -AsPlainText"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"Export-PfxCertificate -Cert 'cert:\\localmachine\\{storeName}\\{thumbprint}' -FilePath {filePathLocal} -Password $newpassword -ChainOption {chainOption} -Force"));
-        });
+        var script = new StringBuilder();
+        script.AppendLine($"Set-ExecutionPolicy -ExecutionPolicy Unrestricted");
+        script.AppendLine($"$newpassword = ConvertTo-SecureString -String '{password}' -Force -AsPlainText");
+        script.AppendLine($"$oldpassword = ConvertTo-SecureString -String '{PfxPassword}' -Force -AsPlainText");
+        script.AppendLine($"Export-PfxCertificate -Cert 'cert:\\localmachine\\{storeName}\\{thumbprint}' -FilePath {filePathLocal} -Password $newpassword -ChainOption {chainOption} -Force");
+        await RunRemoteScriptAsync(script.ToString(), cancellationToken);
     }
 
+    protected async Task RestartServiceAsync(string displayName, CancellationToken cancellationToken)
+    {
+        var script = new StringBuilder();
+
+        script.AppendLine($"Set-ExecutionPolicy -ExecutionPolicy Unrestricted");
+
+        script.AppendLine($"$timespan = New-Object -TypeName System.Timespan -ArgumentList 0,1,0");
+        script.AppendLine($"$svc = Get-Service -DisplayName '{displayName}'");
+        script.AppendLine($"if( ($svc -ne $null) -and ($svc.Status -ne [ServiceProcess.ServiceControllerStatus]::Stopped) ) {{");
+        script.AppendLine($"    $svc.Stop()");
+        script.AppendLine($"    try {{");
+        script.AppendLine($"        $svc.WaitForStatus([ServiceProcess.ServiceControllerStatus]::Stopped, $timespan)");
+        script.AppendLine($"    }}");
+        script.AppendLine($"    catch [ServiceProcess.TimeoutException] {{");        
+        script.AppendLine($"        $pid = (get-wmiobject win32_service | where {{ $_.DisplayName -eq '{displayName}'}}).processID");
+        script.AppendLine($"        Stop-Process -Id $pid -Force");
+        script.AppendLine($"    }}");
+        script.AppendLine($"}}");
+
+        script.AppendLine($"Start-Service -DisplayName '{displayName}'");
+
+        await RunRemoteScriptAsync(script.ToString(), cancellationToken);
+    }
+
+    protected async Task<string[]> RunLocalScriptAsync(string script, CancellationToken cancellationToken)
+    {
+        Runspace runspace = null!;
+        return await runspace.ExecuteAsync(shell => shell.AddScript(script));
+    }
+
+    protected async Task<string[]> RunRemoteScriptAsync(string script, CancellationToken cancellationToken)
+    {
+        var connectionInfo = new WSManConnectionInfo();
+        connectionInfo.ComputerName = ComputerName;
+
+        if (Username != null && Password != null)
+            connectionInfo.Credential = new PSCredential(Username, new NetworkCredential("", Password).SecurePassword);
+
+        using var runspace = RunspaceFactory.CreateRunspace(connectionInfo);
+        runspace.Open();
+
+        try
+        {
+            return await runspace.ExecuteAsync(shell => shell.AddScript(script));
+        }
+        finally
+        {
+            runspace.Close();
+        }        
+    }
 
     protected async Task RemoteAsync(Func<Runspace, Task> tasks)
     {
         var connectionInfo = new WSManConnectionInfo();
         connectionInfo.ComputerName = ComputerName;
 
-        if( Username != null && Password != null )
+        if (Username != null && Password != null)
             connectionInfo.Credential = new PSCredential(Username, new NetworkCredential("", Password).SecurePassword);
 
         using var runspace = RunspaceFactory.CreateRunspace(connectionInfo);
@@ -360,19 +367,13 @@ internal abstract class DeploymentServiceBase : IDeploymentService
         store.Close();
     }
 
-    protected async Task RestartServiceAsync(string displayName, CancellationToken cancellationToken)
+    public async Task<string> GetThumbprintAsync(CancellationToken cancellationToken)
     {
-        await RemoteAsync(async remote =>
-        {
-            string[] result;
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Set-ExecutionPolicy")
-                .AddArgument("Unrestricted"));
+        var pfx = await CertificateService.LoadCertificateAsync(OrderId, cancellationToken);
+        if (pfx == null) throw new NullReferenceException($"No certificate stored with id {OrderId}");
 
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Restart-Service")
-                .AddParameter("Force")
-                .AddParameter("DisplayName", displayName));
-        });
+        var certificate = new X509Certificate2(pfx, PfxPassword);
+
+        return certificate.Thumbprint;
     }
 }
