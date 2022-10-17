@@ -45,10 +45,20 @@
 
 		<WixVariable Id="WixUILicenseRtf" Value="eula.rtf" />
 
-		<UIRef Id="WixUI_Mondo" />
-		<UIRef Id="WixUI_ErrorProgressText" />
+    <Property Id="CREATE_DATABASE_LOGON_TYPE" Value="SqlAuth" />
+    <Property Id="CHECK_CREATE_DATABASE_PERMS" Value="yes" />
+    <Property Id="RUNTIME_DATABASE_LOGON_TYPE" Value="WinAuth" />
+    <Property Id="CHECK_RUNTIME_DATABASE_PERMS" Value="yes" />
+    <Property Id="RUNTIME_DATABASE_NAME" Value="Northwind" />
+    <Property Id="RUNTIME_DATABASE_PERMS_TABLE" Value="Authors" />
+    <Property Id="PORTNUMBER" Value="20080" />
+    <Property Id="CURRENTPORTNUMBER" Value="135" />
+    <Property Id="SERVICE_LOGON_BROWSE" Value="1" />
+    <Property Id="SERVICE_REQUIRE_ADMIN" Value="0" />
+    
+    <UIRef Id="UIFlow" />
 
-	</Product>
+  </Product>
 
 	<Fragment>
 		<Icon Id="app.ico" SourceFile="$(var.ExeDir)\app.ico" />

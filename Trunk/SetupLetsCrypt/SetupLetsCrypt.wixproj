@@ -35,6 +35,7 @@
   <ItemGroup>
     <Compile Include="Assemblies.wxs" />
     <Compile Include="Product.wxs" />
+    <Compile Include="UI.wxs" />
   </ItemGroup>
   <ItemGroup>
     <WixExtension Include="WixFirewallExtension">

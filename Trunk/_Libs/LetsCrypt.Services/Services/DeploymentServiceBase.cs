@@ -77,14 +77,10 @@ internal abstract class DeploymentServiceBase : IDeploymentService
     protected string ComputerName { get; set; } = default!;
     protected string? Username { get; set; }
     protected string? Password { get; set; }
-    // protected string? UncPath { get; set; }
     protected string? LocalPath { get; set; }
 
     protected string GetLocalCertificatePath()
         => Path.Join(LocalPath, $"{OrderId}.pfx");
-
-    //protected string GetNetworkCertificatePath()
-    //    => Path.Join(UncPath, $"{OrderId}.pfx");
 
     protected async Task<DateTimeOffset?> UpdateCertificateAsync(CancellationToken cancellationToken)
     {
@@ -152,28 +148,20 @@ internal abstract class DeploymentServiceBase : IDeploymentService
         }
     }
 
-    //protected async Task<byte[]?> CopyCertificateAsync(CancellationToken cancellationToken)
-    //{
-    //    var pfx = await CertificateService.LoadCertificateAsync(OrderId, cancellationToken);
-    //    if (pfx == null) return null;
-
-    //    var filePathUnc = GetNetworkCertificatePath();
-    //    var directoryUnc = Path.GetDirectoryName(filePathUnc);
-
-    //    if (directoryUnc != null && !Directory.Exists(directoryUnc))
-    //        Directory.CreateDirectory(directoryUnc);
-
-    //    await File.WriteAllBytesAsync(filePathUnc, pfx, cancellationToken);
-
-    //    return pfx;
-    //}
-
     protected async Task<bool> CopyCertificateAsync(CancellationToken cancellationToken)
     {
         var sourcepath = Path.Join(CertificateService.CertificatePath, $"{OrderId}.pfx");
         if (!File.Exists(sourcepath)) return false;
 
         var targetpath = GetLocalCertificatePath();
+
+        if (ComputerName.IsLike("LOCALHOST"))
+        {
+            if (!Directory.Exists(Path.GetDirectoryName(targetpath)))
+                Directory.CreateDirectory(Path.GetDirectoryName(targetpath)!);
+            File.Copy(sourcepath, targetpath, true);
+            return true;
+        }
 
         var script = new StringBuilder();
         if (!string.IsNullOrEmpty(Username))
@@ -312,6 +300,9 @@ internal abstract class DeploymentServiceBase : IDeploymentService
 
     protected async Task<string[]> RunRemoteScriptAsync(string script, CancellationToken cancellationToken)
     {
+        if( ComputerName.IsLike("LOCALHOST") || string.IsNullOrEmpty(ComputerName) )
+            return await RunLocalScriptAsync( script, cancellationToken);
+
         var connectionInfo = new WSManConnectionInfo();
         connectionInfo.ComputerName = ComputerName;
 
@@ -331,26 +322,39 @@ internal abstract class DeploymentServiceBase : IDeploymentService
         }        
     }
 
-    protected async Task RemoteAsync(Func<Runspace, Task> tasks)
+    protected async Task<string[]?> TryRunRemoteScriptAsync( string script, CancellationToken cancellationToken )
     {
-        var connectionInfo = new WSManConnectionInfo();
-        connectionInfo.ComputerName = ComputerName;
-
-        if (Username != null && Password != null)
-            connectionInfo.Credential = new PSCredential(Username, new NetworkCredential("", Password).SecurePassword);
-
-        using var runspace = RunspaceFactory.CreateRunspace(connectionInfo);
-        runspace.Open();
-
         try
         {
-            await tasks(runspace);
+            return await RunRemoteScriptAsync( script, cancellationToken);
         }
-        finally
+        catch( Exception ex )
         {
-            runspace.Close();
+            Logger.Warning(ex, "Ignoring script failure");
+            return null;
         }
     }
+
+    //protected async Task RemoteAsync(Func<Runspace, Task> tasks)
+    //{
+    //    var connectionInfo = new WSManConnectionInfo();
+    //    connectionInfo.ComputerName = ComputerName;
+
+    //    if (Username != null && Password != null)
+    //        connectionInfo.Credential = new PSCredential(Username, new NetworkCredential("", Password).SecurePassword);
+
+    //    using var runspace = RunspaceFactory.CreateRunspace(connectionInfo);
+    //    runspace.Open();
+
+    //    try
+    //    {
+    //        await tasks(runspace);
+    //    }
+    //    finally
+    //    {
+    //        runspace.Close();
+    //    }
+    //}
 
     protected void UpdateCertificateStore(string name, StoreLocation location, X509Certificate2 certificate)
     {

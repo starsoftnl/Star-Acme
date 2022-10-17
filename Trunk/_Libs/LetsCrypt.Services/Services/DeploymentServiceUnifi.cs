@@ -1,5 +1,6 @@
 ﻿using System.Net;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 
 namespace LetsCrypt.Services.Services;
 
@@ -49,33 +50,19 @@ internal class DeploymentServiceUnifi : DeploymentServiceBase
         LoggerContext.Set("Alias", alias);
         Logger.Information("Bind certificate");
 
-        await RemoteAsync(async remote =>
-        {
-            string[] result;
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Set-ExecutionPolicy")
-                .AddArgument("Unrestricted"));
+        var keystore = Path.Combine(unifi.UnifiPath, "data", "keystore");
 
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Set-Location")
-                .AddArgument(unifi.UnifiPath));
+        var script = new StringBuilder();
+        script.AppendLine($"Set-ExecutionPolicy -ExecutionPolicy Unrestricted");
+        script.AppendLine($"Set-Location -Path '{unifi.UnifiPath}'");
+        script.AppendLine($"java -jar lib\\ace.jar stopsvc");
+        await RunRemoteScriptAsync(script.ToString(), cancellationToken);
 
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript("java -jar lib\\ace.jar stopsvc"));
+        await TryRunRemoteScriptAsync($"&'{unifi.KeyToolPath}' -delete -keystore '{keystore}' -alias 'unifi' -srcstorepass 'aircontrolenterprise' -deststorepass aircontrolenterprise -noprompt\r\n", cancellationToken);
+        await TryRunRemoteScriptAsync($"&'{unifi.KeyToolPath}' -changealias -keystore '{keystore}' -alias '{alias}' -destalias unifi -srcstorepass 'aircontrolenterprise' -deststorepass aircontrolenterprise -noprompt", cancellationToken);
+        await RunRemoteScriptAsync($"java -jar lib\\ace.jar startsvc", cancellationToken);
 
-            var keystore = Path.Combine(unifi.UnifiPath, "data", "keystore");
 
-            result = await remote.SafeExecuteAsync(shell => shell
-                .AddScript($"&'{unifi.KeyToolPath}' -delete -keystore '{keystore}' -alias 'unifi' -srcstorepass 'aircontrolenterprise' -deststorepass aircontrolenterprise -noprompt"));
 
-            result = await remote.SafeExecuteAsync(shell => shell
-                .AddScript($"&'{unifi.KeyToolPath}' -importkeystore -srckeystore '{filePathLocal}' -srcstoretype pkcs12 -srcstorepass 'aircontrolenterprise' -destkeystore '{keystore}' -deststorepass aircontrolenterprise -noprompt"));
-
-            result = await remote.SafeExecuteAsync(shell => shell
-                .AddScript($"&'{unifi.KeyToolPath}' -changealias -keystore '{keystore}' -alias '{alias}' -destalias unifi -srcstorepass 'aircontrolenterprise' -deststorepass aircontrolenterprise -noprompt"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript("java -jar lib\\ace.jar startsvc"));
-        });
     }
 }

@@ -1,5 +1,6 @@
 ﻿using System.Net;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 
 namespace LetsCrypt.Services.Services;
 
@@ -49,50 +50,26 @@ internal class DeploymentServiceOctopus : DeploymentServiceBase
         LoggerContext.Set("Port", octopus.Port);
         Logger.Information("Bind certificate");
 
-        await RemoteAsync(async remote =>
-        {
-            string[] result;
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Set-ExecutionPolicy")
-                .AddArgument("Unrestricted"));
+        var items = new List<string>();
+        items.Add($"--thumbprint='{thumbprint}'");
+        items.Add($"--certificate-store='{octopus.StoreName}'");
 
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Set-Location")
-                .AddArgument($"{octopusPath}"));
+        if (!string.IsNullOrEmpty(octopus.Instance))
+            items.Add($"--instance='{octopus.Instance}'");
 
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Stop-Service")
-                .AddParameter("Name", "OctopusDeploy")
-                .AddParameter("Force"));
+        if (!string.IsNullOrEmpty(octopus.IpAddress))
+            items.Add($"--ip-address='{octopus.IpAddress}'");
 
-            var items = new List<string>();
-            items.Add($"--thumbprint='{thumbprint}'");
-            items.Add($"--certificate-store='{octopus.StoreName}'");
+        if (octopus.Port != null)
+            items.Add($"--port={octopus.Port}");
 
-            if (!string.IsNullOrEmpty(octopus.Instance))
-                items.Add($"--instance='{octopus.Instance}'");
+        var script = new StringBuilder();
+        script.AppendLine($"Set-ExecutionPolicy -ExecutionPolicy Unrestricted");
+        script.AppendLine($"Set-Location -Path '{octopusPath}'");
+        script.AppendLine($"Stop-Service -Name 'OctopusDeploy' -Force");
+        script.AppendLine($".\\octopus.server.exe ssl-certificate {string.Join(" ", items)}");
+        script.AppendLine($"Start-Service -Name 'OctopusDeploy'");
 
-            if (!string.IsNullOrEmpty(octopus.IpAddress))
-                items.Add($"--ip-address='{octopus.IpAddress}'");
-
-            if (octopus.Port != null)
-                items.Add($"--port={octopus.Port}");
-
-            result = await remote.ExecuteAsync(shell =>
-                shell.AddScript($".\\octopus.server.exe ssl-certificate {string.Join(" ", items)}"));
-
-            //if (!string.IsNullOrEmpty(octopus.LicenseFile))
-            //{
-            //    LoggerContext.Set("License File", octopus.LicenseFile);
-            //    Logger.Information("Update License");
-
-            //    result = await remote.ExecuteAsync(shell =>
-            //        shell.AddScript($".\\octopus.server.exe license --licenseFile={octopus.LicenseFile}"));
-            //}
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Start-Service")
-                .AddParameter("Name", "OctopusDeploy"));
-        });
+        await RunRemoteScriptAsync(script.ToString(), cancellationToken);
     }
 }

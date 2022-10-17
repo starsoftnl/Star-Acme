@@ -1,6 +1,7 @@
 ﻿using Org.BouncyCastle.Asn1.Pkcs;
 using System.Net;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 
 namespace LetsCrypt.Services.Services;
 
@@ -51,32 +52,26 @@ internal class DeploymentServiceHttpSys : DeploymentServiceBase
 
         var thumbprint = await GetThumbprintAsync(cancellationToken);
 
-        await RemoteAsync(async remote =>
+        var script = new StringBuilder();
+        script.AppendLine($"Set-ExecutionPolicy -ExecutionPolicy Unrestricted");
+
+        foreach (var binding in http.Bindings)
         {
-            string[] result;
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Set-ExecutionPolicy")
-                .AddArgument("Unrestricted"));
+            LoggerContext.Set("Binding", binding);
+            Logger.Information("Bind certificate");
 
-            foreach (var binding in http.Bindings)
+            if (IPAddress.TryParse(binding.Split(":")[0], out var address))
             {
-                LoggerContext.Set("Binding", binding);
-                Logger.Information("Bind certificate");
-
-                result = await remote.ExecuteAsync(shell =>
-                {
-                    if (IPAddress.TryParse(binding.Split(":")[0], out var address))
-                        shell.AddScript($"netsh http delete sslcert ipport='{binding}'");
-                    else shell.AddScript($"netsh http delete sslcert hostnameport='{binding}'");
-                });
-
-                result = await remote.ExecuteAsync(shell =>
-                {
-                    if (IPAddress.TryParse(binding.Split(":")[0], out var address))
-                        shell.AddScript($"netsh http add sslcert ipport='{binding}' certhash={thumbprint} certstorename={http.StoreName} appid='{ApplicationId}'");
-                    else shell.AddScript($"netsh http add sslcert hostnameport='{binding}' certhash={thumbprint} certstorename={http.StoreName} appid='{ApplicationId}'");
-                });
+                script.AppendLine($"netsh http delete sslcert ipport='{binding}'");
+                script.AppendLine($"netsh http add sslcert ipport='{binding}' certhash={thumbprint} certstorename={http.StoreName} appid='{ApplicationId}'");
             }
-        });
+            else
+            {
+                script.AppendLine($"netsh http delete sslcert hostnameport='{binding}'");
+                script.AppendLine($"netsh http add sslcert hostnameport='{binding}' certhash={thumbprint} certstorename={http.StoreName} appid='{ApplicationId}'");
+            }                            
+        }
+
+        await RunRemoteScriptAsync(script.ToString(), cancellationToken);
     }
 }
