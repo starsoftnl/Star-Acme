@@ -34,8 +34,7 @@ internal class DeploymentServiceUnifi : DeploymentServiceBase
 
     private async Task DeployCertificateAsync(DeploymentTargetUnifi unifi, CancellationToken cancellationToken)
     {
-        var pfx = await CopyCertificateAsync(cancellationToken);
-        if (pfx == null) return;
+        if( !await CopyCertificateAsync(cancellationToken) ) return;
 
         await ImportCertificateAsync(unifi.StoreName, cancellationToken);
 
@@ -58,11 +57,21 @@ internal class DeploymentServiceUnifi : DeploymentServiceBase
         script.AppendLine($"java -jar lib\\ace.jar stopsvc");
         await RunRemoteScriptAsync(script.ToString(), cancellationToken);
 
-        await TryRunRemoteScriptAsync($"&'{unifi.KeyToolPath}' -delete -keystore '{keystore}' -alias 'unifi' -srcstorepass 'aircontrolenterprise' -deststorepass aircontrolenterprise -noprompt\r\n", cancellationToken);
-        await TryRunRemoteScriptAsync($"&'{unifi.KeyToolPath}' -changealias -keystore '{keystore}' -alias '{alias}' -destalias unifi -srcstorepass 'aircontrolenterprise' -deststorepass aircontrolenterprise -noprompt", cancellationToken);
-        await RunRemoteScriptAsync($"java -jar lib\\ace.jar startsvc", cancellationToken);
+        script = new StringBuilder();
+        script.AppendLine($"Set-ExecutionPolicy -ExecutionPolicy Unrestricted");
+        script.AppendLine($"Set-Location -Path '{unifi.UnifiPath}'");
+        script.AppendLine($"&'{unifi.KeyToolPath}' -delete -keystore '{keystore}' -alias 'unifi' -srcstorepass 'aircontrolenterprise' -deststorepass aircontrolenterprise -noprompt");
+        await TryRunRemoteScriptAsync(script.ToString(), cancellationToken);
 
+        script = new StringBuilder();
+        script.AppendLine($"Set-ExecutionPolicy -ExecutionPolicy Unrestricted");
+        script.AppendLine($"Set-Location -Path '{unifi.UnifiPath}'");
+        script.AppendLine($"&'{unifi.KeyToolPath}' -changealias -keystore '{keystore}' -alias '{alias}' -destalias unifi -srcstorepass 'aircontrolenterprise' -deststorepass aircontrolenterprise -noprompt");
+        await TryRunRemoteScriptAsync(script.ToString(), cancellationToken);
 
-
+        script = new StringBuilder();
+        script.AppendLine($"Set-ExecutionPolicy -ExecutionPolicy Unrestricted");
+        script.AppendLine($"Set-Location -Path '{unifi.UnifiPath}'");
+        await RunRemoteScriptAsync(script.ToString(), cancellationToken);
     }
 }

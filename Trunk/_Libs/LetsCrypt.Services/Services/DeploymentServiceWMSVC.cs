@@ -1,5 +1,6 @@
 ﻿using System.Net;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 
 namespace LetsCrypt.Services.Services;
 
@@ -44,29 +45,14 @@ internal class DeploymentServiceWMSVC : DeploymentServiceBase
 
         Logger.Information("Bind certificate");
 
-        await RemoteAsync(async remote =>
-        {
-            string[] result;
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Set-ExecutionPolicy")
-                .AddArgument("Unrestricted"));
+        var binary = string.Join(",", Enumerable.Range(0, thumbprint.Length / 2).Select(i => $"0x{thumbprint.Substring(i * 2, 2)}"));
 
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Stop-Service")
-                .AddArgument("WMSVC"));
+        var script = new StringBuilder();
+        script.AppendLine($"Set-ExecutionPolicy -ExecutionPolicy Unrestricted");
+        script.AppendLine($"Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\WebManagement\\Server' -Name 'SslCertificateHash' -Value ([byte[]]({binary}))");
+        script.AppendLine($"Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\WebManagement\\Server' -Name 'SelfSignedCertificateHash' -Value ([byte[]]({binary}))");
+        await RunRemoteScriptAsync(script.ToString(), cancellationToken);
 
-            var binary = string.Join(",", Enumerable.Range(0, thumbprint.Length / 2).Select(i => $"0x{thumbprint.Substring(i * 2, 2)}"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\WebManagement\\Server' -Name 'SslCertificateHash' -Value ([byte[]]({binary}))"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\WebManagement\\Server' -Name 'SelfSignedCertificateHash' -Value ([byte[]]({binary}))"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Start-Service")
-                .AddArgument("WMSVC"));
-
-        });
+        await RestartServiceAsync("Web Management Service", cancellationToken);
     }
 }

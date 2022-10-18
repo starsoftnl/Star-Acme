@@ -1,5 +1,7 @@
 ﻿using System.Net;
+using System.Reactive;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 
 namespace LetsCrypt.Services.Services;
 
@@ -44,32 +46,14 @@ internal class DeploymentServiceWac : DeploymentServiceBase
 
         Logger.Information("Bind certificate");
 
-        await RemoteAsync(async remote =>
-        {
-            string[] result;
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Set-ExecutionPolicy")
-                .AddArgument("Unrestricted"));
+        var script = new StringBuilder();
+        script.AppendLine($"Set-ExecutionPolicy -ExecutionPolicy Unrestricted");
+        script.AppendLine($"netsh http delete sslcert ipport=0.0.0.0:{wac.Port}");
+        script.AppendLine($"netsh http delete urlacl url=https://+:{wac.Port}/");
+        script.AppendLine($"netsh http add urlacl url=https://+:{wac.Port}/ user='NT Authority\\Network Service'");
+        script.AppendLine($"netsh http add sslcert ipport=0.0.0.0:{wac.Port} certhash='{thumbprint}' appid='{{9A81E8DC-5AFD-46B6-A728-93218D11C0B9}}'");
+        await RunRemoteScriptAsync(script.ToString(), cancellationToken);
 
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Stop-Service")
-                .AddArgument("ServerManagementGateway"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"netsh http delete sslcert ipport=0.0.0.0:{wac.Port}"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"netsh http delete urlacl url=https://+:{wac.Port}/"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"netsh http add urlacl url=https://+:{wac.Port}/ user='NT Authority\\Network Service'"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddScript($"netsh http add sslcert ipport=0.0.0.0:{wac.Port} certhash='{thumbprint}' appid='{{9A81E8DC-5AFD-46B6-A728-93218D11C0B9}}'"));
-
-            result = await remote.ExecuteAsync(shell => shell
-                .AddCommand("Start-Service")
-                .AddArgument("ServerManagementGateway"));
-        });
+        await RestartServiceAsync("Windows Admin Center Service", cancellationToken);
     }
 }
